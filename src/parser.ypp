@@ -1,0 +1,253 @@
+%code requires {
+    #include "ast.hpp"
+}
+
+%{
+#include <iostream>
+#include <cstdlib>
+#include "symbol_table.hpp"
+#include "codegen.hpp"
+#include "ast_print.hpp"
+
+CodeGen gen;
+SymbolTable symtab;
+extern int yylineno;
+int yylex(void);
+void yyerror(const char *s);
+
+Stmt* programAST = nullptr;
+bool verbose = false;
+%}
+
+/* ==== UNION ==== */
+%union {
+    long long num;
+    char* id;
+    Expr* expr;
+    Stmt* stmt;
+}
+
+%type <expr> expression value
+%type <stmt> command commands main
+%type <id> identifier
+
+/* ==== TOKENY ==== */
+%token PROGRAM IS IN END PROCEDURE
+%token IF THEN ELSE ENDIF
+%token WHILE DO ENDWHILE
+%token FOR FROM TO DOWNTO ENDFOR
+%token REPEAT UNTIL
+%token READ WRITE
+
+%token ASSIGN NEQ LEQ GEQ
+%token PLUS MINUS MUL DIV MOD
+%token EQ LT GT
+
+%token T I O
+
+%token SEM COM COL LBR RBR LSB RSB
+
+%token <num> NUM
+%token <id>  PIDENTIFIER
+
+/* ==== PRIORYTETY ==== */
+%left PLUS MINUS
+%left MUL DIV MOD
+
+%%
+
+/* ===== START ===== */
+program_all
+    : procedures main                                                       {if (verbose) std::cout << "[PARSE] program_all\n";
+                                                                                programAST = $2;
+                                                                                symtab.dump();
+
+                                                                                std::cout << "\n=== AST (last statement) ===\n";
+                                                                                gen.genStmt(programAST);
+                                                                                //printStmt(lastStmt);
+                                                                            }
+    ;
+
+procedures
+    : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";}
+    | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";}
+    | /* empty */                                                           {if (verbose) std::cout << "[PARSE] procedures empty\n";}
+    ;
+
+main
+    : PROGRAM IS declarations IN commands END                               {if (verbose) std::cout << "[PARSE] main program (with declarations)\n";
+                                                                                $$ = $5;
+                                                                            }
+    | PROGRAM IS IN commands END                                            {if (verbose) std::cout << "[PARSE] main program (no declarations)\n";
+                                                                                $$ = $4; 
+                                                                            }
+    ;
+
+commands
+    : commands command                                                      {if (verbose) std::cout << "[PARSE] commands with following command\n";
+                                                                                auto block = static_cast<BlockStmt*>($1);
+                                                                                block->stmts.emplace_back($2);
+                                                                                $$ = block;
+                                                                            }
+    | command                                                               {if (verbose) std::cout << "[PARSE] commands with a command\n";
+                                                                                auto block = new BlockStmt();
+                                                                                block->stmts.emplace_back($1);
+                                                                                $$ = block;
+                                                                            }
+    ;
+
+command
+    : identifier ASSIGN expression SEM                                      {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
+                                                                                $$ = new AssignStmt($1, std::unique_ptr<Expr>($3));
+                                                                            }
+    | IF condition THEN commands ELSE commands ENDIF                        {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";}
+    | IF condition THEN commands ENDIF                                      {if (verbose) std::cout << "[PARSE] command IF THEN\n";}
+    | WHILE condition DO commands ENDWHILE                                  {if (verbose) std::cout << "[PARSE] command WHILE DO\n";}
+    | REPEAT commands UNTIL condition SEM                                   {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";}
+    | FOR PIDENTIFIER FROM value TO value DO commands ENDFOR                {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";}
+    | FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";}
+    | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";}
+    | READ identifier SEM                                                   {if (verbose) std::cout << "[PARSE] command READ\n";
+                                                                                $$ = new ReadStmt($2);
+                                                                            }
+    | WRITE value SEM                                                       {if (verbose) std::cout << "[PARSE] command WRITE\n";
+                                                                                $$ = new WriteStmt(std::unique_ptr<Expr>($2));
+                                                                            }
+    ;
+
+proc_head
+    : PIDENTIFIER LBR args_decl RBR                                         {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";}
+    ;
+
+proc_call
+    : PIDENTIFIER LBR args RBR                                              {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";}
+    ;
+
+declarations
+    : declarations COM PIDENTIFIER                                          {if (verbose) std::cout << "[PARSE] declarations with more PID\n";
+                                                                                if (!symtab.declareVariable($3)) {
+                                                                                    yyerror("Variable redeclared");
+                                                                                }
+                                                                            }   
+    | declarations COM PIDENTIFIER LSB NUM COL NUM RSB                      {if (verbose) std::cout << "[PARSE] declarations with more PID[]\n";
+                                                                                if (!symtab.declareArray($3, $5, $7)) {
+                                                                                    yyerror("Array redeclared or invalid range");
+                                                                                }
+                                                                            }
+    | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] declarations with last PID\n";
+                                                                                if (!symtab.declareVariable($1)) {
+                                                                                    yyerror("Variable redeclared");
+                                                                                }
+                                                                            }
+    | PIDENTIFIER LSB NUM COL NUM RSB                                       {if (verbose) std::cout << "[PARSE] declarations with last PID[]\n";
+                                                                                if (!symtab.declareArray($1, $3, $5)) {
+                                                                                    yyerror("Array redeclared or invalid range");
+                                                                                }
+                                                                            }
+    ;
+
+args_decl
+    : args_decl COM type PIDENTIFIER                                        {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";}
+    | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";}
+    ;
+
+type
+    : /* empty */                                                           {if (verbose) std::cout << "[PARSE] type empty\n";}
+    | T                                                                     {if (verbose) std::cout << "[PARSE] type T\n";}
+    | I                                                                     {if (verbose) std::cout << "[PARSE] type I\n";}
+    | O                                                                     {if (verbose) std::cout << "[PARSE] type O\n";}
+    ;
+
+args
+    : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";}
+    | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";}
+    ;
+
+expression
+    : value                                                                 {if (verbose) std::cout << "[PARSE] expression value\n";
+                                                                                $$ = $1;
+                                                                            }
+    | value PLUS value                                                      {if (verbose) std::cout << "[PARSE] expression PLUS\n";
+                                                                                $$ = new BinExpr(BinOp::ADD,
+                                                                                                    std::unique_ptr<Expr>($1),
+                                                                                                    std::unique_ptr<Expr>($3));
+                                                                            }
+    | value MINUS value                                                     {if (verbose) std::cout << "[PARSE] expression MINUS\n";
+                                                                                $$ = new BinExpr(BinOp::SUB,
+                                                                                                    std::unique_ptr<Expr>($1),
+                                                                                                    std::unique_ptr<Expr>($3));
+                                                                            }
+    | value MUL value                                                       {if (verbose) std::cout << "[PARSE] expression MUL\n";
+                                                                            $$ = new BinExpr(BinOp::MUL,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value DIV value                                                       {if (verbose) std::cout << "[PARSE] expressiion DIV\n";
+                                                                            $$ = new BinExpr(BinOp::DIV,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value MOD value                                                       {if (verbose) std::cout << "[PARSE] expression MOD\n";
+                                                                            $$ = new BinExpr(BinOp::MOD,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    ;
+
+condition
+    : value EQ value                                                        {if (verbose) std::cout << "[PARSE] condition EQ\n";}
+    | value NEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition NEQ\n";}
+    | value GT value                                                        {if (verbose) std::cout << "[PARSE] condition GT\n";}
+    | value LT value                                                        {if (verbose) std::cout << "[PARSE] condiition LT\n";}
+    | value GEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition GEQ\n";}
+    | value LEQ value                                                       {if (verbose) std::cout << "[PARSE] condition LEQ\n";}
+    ;
+
+value
+    : NUM                                                                   {if (verbose) std::cout << "[PARSE] value NUM\n";
+                                                                                $$ = new ConstExpr($1);
+                                                                            }
+    | identifier                                                            {if (verbose) std::cout << "[PARSE] value identifier\n";
+                                                                                $$ = new VarExpr($1);
+                                                                            }
+    ;
+
+identifier
+    : PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] identifier PID\n";
+                                                                                $$ = $1;
+                                                                                if (!symtab.lookup($1)) {
+                                                                                    yyerror("Use of undeclared variable");
+                                                                                }
+                                                                            }
+    | PIDENTIFIER LSB PIDENTIFIER RSB                                       {if (verbose) std::cout << "[PARSE] identifier [PID]\n";
+                                                                                $$ = $1;
+                                                                                auto sym = symtab.lookup($1);
+                                                                                if (!sym) yyerror("Use of undeclared array");
+                                                                                if (sym->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+
+                                                                                // indeks jest zmienną → NIE sprawdzamy zakresu
+                                                                                if (!symtab.lookup($3)) {
+                                                                                    yyerror("Use of undeclared variable as array index");
+                                                                                }
+                                                                            }
+    | PIDENTIFIER LSB NUM RSB                                               {if (verbose) std::cout << "[PARSE] identifier [NUM]\n";
+                                                                                $$ = $1;
+                                                                                auto sym = symtab.lookup($1);
+                                                                                if (!sym) {
+                                                                                    yyerror("Use of undeclared array");
+                                                                                }
+                                                                                if (sym->kind != SymbolKind::ARRAY) {
+                                                                                    yyerror("Indexing non-array");
+                                                                                }
+                                                                                if ($3 < sym->start || $3 > sym->end)
+                                                                                    yyerror("Array index out of bounds");
+                                                                            }
+    ;
+
+%%
+
+void yyerror(const char *s) {
+    std::cerr << "SYNTAX ERROR line "
+              << yylineno << ": " << s << std::endl;
+    exit(1);
+}

@@ -1,0 +1,9 @@
+PROGRAM IS
+x
+IN
+x := 3;
+REPEAT
+  WRITE x;
+  x := x - 1;
+UNTIL x = 0;
+END

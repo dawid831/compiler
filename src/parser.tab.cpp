@@ -79,7 +79,7 @@
 
 ProcedureTable proctab;
 std::vector<ProcParam> currentParams;
-CodeGen gen;
+CodeGen gen(proctab);
 SymbolTable symtab;
 extern int yylineno;
 int yylex(void);
@@ -572,12 +572,12 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,    68,    68,    79,    83,    87,    91,    94,   100,   105,
-     113,   116,   117,   118,   119,   120,   121,   122,   125,   128,
-     134,   134,   146,   160,   165,   170,   175,   183,   187,   195,
-     196,   197,   198,   202,   205,   211,   214,   219,   224,   229,
-     234,   242,   243,   244,   245,   246,   247,   251,   254,   260,
-     266,   277
+       0,    68,    68,    79,    86,    93,    97,   100,   106,   111,
+     119,   122,   129,   136,   142,   148,   151,   154,   157,   160,
+     166,   166,   179,   193,   198,   203,   208,   216,   220,   228,
+     229,   230,   231,   235,   238,   244,   247,   252,   257,   262,
+     267,   275,   276,   277,   278,   279,   280,   284,   287,   293,
+     299,   310
 };
 #endif
 
@@ -1265,153 +1265,185 @@ yyreduce:
   case 3: /* procedures: procedures PROCEDURE proc_head IS declarations IN commands END  */
 #line 79 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
+                                                                                auto* body = static_cast<BlockStmt*>((yyvsp[-1].stmt));
+                                                                                proctab.defineBody((yyvsp[-5].id), body);
+                                                                                
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
-#line 1272 "parser.tab.cpp"
+#line 1275 "parser.tab.cpp"
     break;
 
   case 4: /* procedures: procedures PROCEDURE proc_head IS IN commands END  */
-#line 83 "parser.ypp"
+#line 86 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
+                                                                                auto* body = static_cast<BlockStmt*>((yyvsp[-1].stmt));
+                                                                                proctab.defineBody((yyvsp[-4].id), body);
+                                                                                
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
-#line 1281 "parser.tab.cpp"
-    break;
-
-  case 5: /* procedures: %empty  */
-#line 87 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] procedures empty\n";}
 #line 1287 "parser.tab.cpp"
     break;
 
+  case 5: /* procedures: %empty  */
+#line 93 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] procedures empty\n";}
+#line 1293 "parser.tab.cpp"
+    break;
+
   case 6: /* main: PROGRAM IS declarations IN commands END  */
-#line 91 "parser.ypp"
+#line 97 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] main program (with declarations)\n";
                                                                                 (yyval.stmt) = (yyvsp[-1].stmt);
                                                                             }
-#line 1295 "parser.tab.cpp"
+#line 1301 "parser.tab.cpp"
     break;
 
   case 7: /* main: PROGRAM IS IN commands END  */
-#line 94 "parser.ypp"
+#line 100 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] main program (no declarations)\n";
                                                                                 (yyval.stmt) = (yyvsp[-1].stmt); 
                                                                             }
-#line 1303 "parser.tab.cpp"
+#line 1309 "parser.tab.cpp"
     break;
 
   case 8: /* commands: commands command  */
-#line 100 "parser.ypp"
+#line 106 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] commands with following command\n";
                                                                                 auto block = static_cast<BlockStmt*>((yyvsp[-1].stmt));
                                                                                 block->stmts.emplace_back((yyvsp[0].stmt));
                                                                                 (yyval.stmt) = block;
                                                                             }
-#line 1313 "parser.tab.cpp"
+#line 1319 "parser.tab.cpp"
     break;
 
   case 9: /* commands: command  */
-#line 105 "parser.ypp"
+#line 111 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] commands with a command\n";
                                                                                 auto block = new BlockStmt();
                                                                                 block->stmts.emplace_back((yyvsp[0].stmt));
                                                                                 (yyval.stmt) = block;
                                                                             }
-#line 1323 "parser.tab.cpp"
+#line 1329 "parser.tab.cpp"
     break;
 
   case 10: /* command: identifier ASSIGN expression SEM  */
-#line 113 "parser.ypp"
+#line 119 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
                                                                                 (yyval.stmt) = new AssignStmt((yyvsp[-3].id), std::unique_ptr<Expr>((yyvsp[-1].expr)));
                                                                             }
-#line 1331 "parser.tab.cpp"
-    break;
-
-  case 11: /* command: IF condition THEN commands ELSE commands ENDIF  */
-#line 116 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";}
 #line 1337 "parser.tab.cpp"
     break;
 
-  case 12: /* command: IF condition THEN commands ENDIF  */
-#line 117 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command IF THEN\n";}
-#line 1343 "parser.tab.cpp"
-    break;
-
-  case 13: /* command: WHILE condition DO commands ENDWHILE  */
-#line 118 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command WHILE DO\n";}
+  case 11: /* command: IF condition THEN commands ELSE commands ENDIF  */
+#line 122 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";
+                                                                                (yyval.stmt) = new IfStmt(
+                                                                                    std::unique_ptr<Expr>((yyvsp[-5].expr)),
+                                                                                    std::unique_ptr<Stmt>((yyvsp[-3].stmt)),
+                                                                                    std::unique_ptr<Stmt>((yyvsp[-1].stmt))
+                                                                                );
+                                                                            }
 #line 1349 "parser.tab.cpp"
     break;
 
-  case 14: /* command: REPEAT commands UNTIL condition SEM  */
-#line 119 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";}
-#line 1355 "parser.tab.cpp"
-    break;
-
-  case 15: /* command: FOR PIDENTIFIER FROM value TO value DO commands ENDFOR  */
-#line 120 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";}
+  case 12: /* command: IF condition THEN commands ENDIF  */
+#line 129 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command IF THEN\n";
+                                                                                (yyval.stmt) = new IfStmt(
+                                                                                    std::unique_ptr<Expr>((yyvsp[-3].expr)),
+                                                                                    std::unique_ptr<Stmt>((yyvsp[-1].stmt)),
+                                                                                    nullptr
+                                                                                );
+                                                                            }
 #line 1361 "parser.tab.cpp"
     break;
 
-  case 16: /* command: FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR  */
-#line 121 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";}
-#line 1367 "parser.tab.cpp"
-    break;
-
-  case 17: /* command: proc_call SEM  */
-#line 122 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command proc_call\n";
-                                                                                (yyval.stmt) = new CallStmt((yyvsp[-1].id));
+  case 13: /* command: WHILE condition DO commands ENDWHILE  */
+#line 136 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command WHILE DO\n";
+                                                                                (yyval.stmt) = new WhileStmt(
+                                                                                    std::unique_ptr<Expr>((yyvsp[-3].expr)),
+                                                                                    std::unique_ptr<Stmt>((yyvsp[-1].stmt))
+                                                                                );
                                                                             }
-#line 1375 "parser.tab.cpp"
+#line 1372 "parser.tab.cpp"
     break;
 
-  case 18: /* command: READ identifier SEM  */
-#line 125 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command READ\n";
-                                                                                (yyval.stmt) = new ReadStmt((yyvsp[-1].id));
+  case 14: /* command: REPEAT commands UNTIL condition SEM  */
+#line 142 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";
+                                                                                (yyval.stmt) = new RepeatStmt(
+                                                                                    std::unique_ptr<Stmt>((yyvsp[-3].stmt)),
+                                                                                    std::unique_ptr<Expr>((yyvsp[-1].expr))
+                                                                                );
                                                                             }
 #line 1383 "parser.tab.cpp"
     break;
 
-  case 19: /* command: WRITE value SEM  */
-#line 128 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command WRITE\n";
-                                                                                (yyval.stmt) = new WriteStmt(std::unique_ptr<Expr>((yyvsp[-1].expr)));
+  case 15: /* command: FOR PIDENTIFIER FROM value TO value DO commands ENDFOR  */
+#line 148 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";
+                                                                                (yyval.stmt) = new NopStmt();
                                                                             }
 #line 1391 "parser.tab.cpp"
     break;
 
+  case 16: /* command: FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR  */
+#line 151 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";
+                                                                                (yyval.stmt) = new NopStmt();
+                                                                            }
+#line 1399 "parser.tab.cpp"
+    break;
+
+  case 17: /* command: proc_call SEM  */
+#line 154 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command proc_call\n";
+                                                                                (yyval.stmt) = new CallStmt((yyvsp[-1].id));
+                                                                            }
+#line 1407 "parser.tab.cpp"
+    break;
+
+  case 18: /* command: READ identifier SEM  */
+#line 157 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command READ\n";
+                                                                                (yyval.stmt) = new ReadStmt((yyvsp[-1].id));
+                                                                            }
+#line 1415 "parser.tab.cpp"
+    break;
+
+  case 19: /* command: WRITE value SEM  */
+#line 160 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command WRITE\n";
+                                                                                (yyval.stmt) = new WriteStmt(std::unique_ptr<Expr>((yyvsp[-1].expr)));
+                                                                            }
+#line 1423 "parser.tab.cpp"
+    break;
+
   case 20: /* $@1: %empty  */
-#line 134 "parser.ypp"
-                  {
-        symtab.enterScope();
-        currentParams.clear();
-      }
-#line 1400 "parser.tab.cpp"
+#line 166 "parser.ypp"
+                                                                            {
+                                                                                symtab.enterScope();
+                                                                                currentParams.clear();
+                                                                            }
+#line 1432 "parser.tab.cpp"
     break;
 
   case 21: /* proc_head: PIDENTIFIER $@1 LBR args_decl RBR  */
-#line 137 "parser.ypp"
-                                                                  {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
- 
+#line 170 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
                                                                                 if (!proctab.declareProcedure((yyvsp[-4].id), currentParams)) {
                                                                                     yyerror("Procedure redeclared");
                                                                                 }
+                                                                                (yyval.id) = (yyvsp[-4].id);
                                                                             }
-#line 1411 "parser.tab.cpp"
+#line 1443 "parser.tab.cpp"
     break;
 
   case 22: /* proc_call: PIDENTIFIER LBR args RBR  */
-#line 146 "parser.ypp"
+#line 179 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";
                                                                                 const auto* proc = proctab.lookup((yyvsp[-3].id));
                                                                                 if (!proc) {
@@ -1423,231 +1455,231 @@ yyreduce:
 
                                                                                 (yyval.id) = (yyvsp[-3].id);
                                                                             }
-#line 1427 "parser.tab.cpp"
+#line 1459 "parser.tab.cpp"
     break;
 
   case 23: /* declarations: declarations COM PIDENTIFIER  */
-#line 160 "parser.ypp"
+#line 193 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with more PID\n";
                                                                                 if (!symtab.declareVariable((yyvsp[0].id))) {
                                                                                     yyerror("Variable redeclared");
                                                                                 }
                                                                             }
-#line 1437 "parser.tab.cpp"
+#line 1469 "parser.tab.cpp"
     break;
 
   case 24: /* declarations: declarations COM PIDENTIFIER LSB NUM COL NUM RSB  */
-#line 165 "parser.ypp"
+#line 198 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with more PID[]\n";
                                                                                 if (!symtab.declareArray((yyvsp[-5].id), (yyvsp[-3].num), (yyvsp[-1].num))) {
                                                                                     yyerror("Array redeclared or invalid range");
                                                                                 }
                                                                             }
-#line 1447 "parser.tab.cpp"
+#line 1479 "parser.tab.cpp"
     break;
 
   case 25: /* declarations: PIDENTIFIER  */
-#line 170 "parser.ypp"
+#line 203 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with last PID\n";
                                                                                 if (!symtab.declareVariable((yyvsp[0].id))) {
                                                                                     yyerror("Variable redeclared");
                                                                                 }
                                                                             }
-#line 1457 "parser.tab.cpp"
+#line 1489 "parser.tab.cpp"
     break;
 
   case 26: /* declarations: PIDENTIFIER LSB NUM COL NUM RSB  */
-#line 175 "parser.ypp"
+#line 208 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with last PID[]\n";
                                                                                 if (!symtab.declareArray((yyvsp[-5].id), (yyvsp[-3].num), (yyvsp[-1].num))) {
                                                                                     yyerror("Array redeclared or invalid range");
                                                                                 }
                                                                             }
-#line 1467 "parser.tab.cpp"
+#line 1499 "parser.tab.cpp"
     break;
 
   case 27: /* args_decl: args_decl COM type PIDENTIFIER  */
-#line 183 "parser.ypp"
+#line 216 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";
                                                                                 currentParams.push_back({currentParamMode, (yyvsp[0].id)});
                                                                                 symtab.declareVariable((yyvsp[0].id)); // parametr = zmienna w scope procedury
                                                                             }
-#line 1476 "parser.tab.cpp"
+#line 1508 "parser.tab.cpp"
     break;
 
   case 28: /* args_decl: type PIDENTIFIER  */
-#line 187 "parser.ypp"
+#line 220 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
                                                                                 currentParams.clear();
                                                                                 currentParams.push_back({currentParamMode, (yyvsp[0].id)});
                                                                                 symtab.declareVariable((yyvsp[0].id));
                                                                             }
-#line 1486 "parser.tab.cpp"
-    break;
-
-  case 29: /* type: %empty  */
-#line 195 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] type empty\n";}
-#line 1492 "parser.tab.cpp"
-    break;
-
-  case 30: /* type: T  */
-#line 196 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] type T\n"; currentParamMode = 'T';}
-#line 1498 "parser.tab.cpp"
-    break;
-
-  case 31: /* type: I  */
-#line 197 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] type I\n"; currentParamMode = 'I';}
-#line 1504 "parser.tab.cpp"
-    break;
-
-  case 32: /* type: O  */
-#line 198 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] type O\n"; currentParamMode = 'O';}
-#line 1510 "parser.tab.cpp"
-    break;
-
-  case 33: /* args: args COM PIDENTIFIER  */
-#line 202 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] args with more PID\n";
-                                                                                (yyval.argCount) = (yyvsp[-2].argCount) + 1;
-                                                                            }
 #line 1518 "parser.tab.cpp"
     break;
 
+  case 29: /* type: %empty  */
+#line 228 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] type empty\n";}
+#line 1524 "parser.tab.cpp"
+    break;
+
+  case 30: /* type: T  */
+#line 229 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] type T\n"; currentParamMode = 'T';}
+#line 1530 "parser.tab.cpp"
+    break;
+
+  case 31: /* type: I  */
+#line 230 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] type I\n"; currentParamMode = 'I';}
+#line 1536 "parser.tab.cpp"
+    break;
+
+  case 32: /* type: O  */
+#line 231 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] type O\n"; currentParamMode = 'O';}
+#line 1542 "parser.tab.cpp"
+    break;
+
+  case 33: /* args: args COM PIDENTIFIER  */
+#line 235 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] args with more PID\n";
+                                                                                (yyval.argCount) = (yyvsp[-2].argCount) + 1;
+                                                                            }
+#line 1550 "parser.tab.cpp"
+    break;
+
   case 34: /* args: PIDENTIFIER  */
-#line 205 "parser.ypp"
+#line 238 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args with last PID\n";
                                                                                 (yyval.argCount) = 1;
                                                                             }
-#line 1526 "parser.tab.cpp"
+#line 1558 "parser.tab.cpp"
     break;
 
   case 35: /* expression: value  */
-#line 211 "parser.ypp"
+#line 244 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression value\n";
                                                                                 (yyval.expr) = (yyvsp[0].expr);
                                                                             }
-#line 1534 "parser.tab.cpp"
+#line 1566 "parser.tab.cpp"
     break;
 
   case 36: /* expression: value PLUS value  */
-#line 214 "parser.ypp"
+#line 247 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression PLUS\n";
                                                                                 (yyval.expr) = new BinExpr(BinOp::ADD,
                                                                                                     std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                     std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1544 "parser.tab.cpp"
+#line 1576 "parser.tab.cpp"
     break;
 
   case 37: /* expression: value MINUS value  */
-#line 219 "parser.ypp"
+#line 252 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MINUS\n";
                                                                                 (yyval.expr) = new BinExpr(BinOp::SUB,
                                                                                                     std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                     std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1554 "parser.tab.cpp"
+#line 1586 "parser.tab.cpp"
     break;
 
   case 38: /* expression: value MUL value  */
-#line 224 "parser.ypp"
+#line 257 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MUL\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::MUL,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1564 "parser.tab.cpp"
+#line 1596 "parser.tab.cpp"
     break;
 
   case 39: /* expression: value DIV value  */
-#line 229 "parser.ypp"
+#line 262 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expressiion DIV\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::DIV,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1574 "parser.tab.cpp"
+#line 1606 "parser.tab.cpp"
     break;
 
   case 40: /* expression: value MOD value  */
-#line 234 "parser.ypp"
+#line 267 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MOD\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::MOD,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1584 "parser.tab.cpp"
+#line 1616 "parser.tab.cpp"
     break;
 
   case 41: /* condition: value EQ value  */
-#line 242 "parser.ypp"
+#line 275 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condition EQ\n";}
-#line 1590 "parser.tab.cpp"
+#line 1622 "parser.tab.cpp"
     break;
 
   case 42: /* condition: value NEQ value  */
-#line 243 "parser.ypp"
+#line 276 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condiition NEQ\n";}
-#line 1596 "parser.tab.cpp"
-    break;
-
-  case 43: /* condition: value GT value  */
-#line 244 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] condition GT\n";}
-#line 1602 "parser.tab.cpp"
-    break;
-
-  case 44: /* condition: value LT value  */
-#line 245 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] condiition LT\n";}
-#line 1608 "parser.tab.cpp"
-    break;
-
-  case 45: /* condition: value GEQ value  */
-#line 246 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] condiition GEQ\n";}
-#line 1614 "parser.tab.cpp"
-    break;
-
-  case 46: /* condition: value LEQ value  */
-#line 247 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] condition LEQ\n";}
-#line 1620 "parser.tab.cpp"
-    break;
-
-  case 47: /* value: NUM  */
-#line 251 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] value NUM\n";
-                                                                                (yyval.expr) = new ConstExpr((yyvsp[0].num));
-                                                                            }
 #line 1628 "parser.tab.cpp"
     break;
 
+  case 43: /* condition: value GT value  */
+#line 277 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] condition GT\n";}
+#line 1634 "parser.tab.cpp"
+    break;
+
+  case 44: /* condition: value LT value  */
+#line 278 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] condiition LT\n";}
+#line 1640 "parser.tab.cpp"
+    break;
+
+  case 45: /* condition: value GEQ value  */
+#line 279 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] condiition GEQ\n";}
+#line 1646 "parser.tab.cpp"
+    break;
+
+  case 46: /* condition: value LEQ value  */
+#line 280 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] condition LEQ\n";}
+#line 1652 "parser.tab.cpp"
+    break;
+
+  case 47: /* value: NUM  */
+#line 284 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] value NUM\n";
+                                                                                (yyval.expr) = new ConstExpr((yyvsp[0].num));
+                                                                            }
+#line 1660 "parser.tab.cpp"
+    break;
+
   case 48: /* value: identifier  */
-#line 254 "parser.ypp"
+#line 287 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] value identifier\n";
                                                                                 (yyval.expr) = new VarExpr((yyvsp[0].id));
                                                                             }
-#line 1636 "parser.tab.cpp"
+#line 1668 "parser.tab.cpp"
     break;
 
   case 49: /* identifier: PIDENTIFIER  */
-#line 260 "parser.ypp"
+#line 293 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier PID\n";
                                                                                 (yyval.id) = (yyvsp[0].id);
                                                                                 if (!symtab.lookup((yyvsp[0].id))) {
                                                                                     yyerror("Use of undeclared variable");
                                                                                 }
                                                                             }
-#line 1647 "parser.tab.cpp"
+#line 1679 "parser.tab.cpp"
     break;
 
   case 50: /* identifier: PIDENTIFIER LSB PIDENTIFIER RSB  */
-#line 266 "parser.ypp"
+#line 299 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier [PID]\n";
                                                                                 (yyval.id) = (yyvsp[-3].id);
                                                                                 auto sym = symtab.lookup((yyvsp[-3].id));
@@ -1659,11 +1691,11 @@ yyreduce:
                                                                                     yyerror("Use of undeclared variable as array index");
                                                                                 }
                                                                             }
-#line 1663 "parser.tab.cpp"
+#line 1695 "parser.tab.cpp"
     break;
 
   case 51: /* identifier: PIDENTIFIER LSB NUM RSB  */
-#line 277 "parser.ypp"
+#line 310 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier [NUM]\n";
                                                                                 (yyval.id) = (yyvsp[-3].id);
                                                                                 auto sym = symtab.lookup((yyvsp[-3].id));
@@ -1676,11 +1708,11 @@ yyreduce:
                                                                                 if ((yyvsp[-1].num) < sym->start || (yyvsp[-1].num) > sym->end)
                                                                                     yyerror("Array index out of bounds");
                                                                             }
-#line 1680 "parser.tab.cpp"
+#line 1712 "parser.tab.cpp"
     break;
 
 
-#line 1684 "parser.tab.cpp"
+#line 1716 "parser.tab.cpp"
 
       default: break;
     }
@@ -1873,7 +1905,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 291 "parser.ypp"
+#line 324 "parser.ypp"
 
 
 void yyerror(const char *s) {

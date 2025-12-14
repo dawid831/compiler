@@ -29,7 +29,67 @@ void CodeGen::genStmt(const Stmt* s) {
             break;
         }
         case StmtKind::CALL: {
-            // TODO: implement later
+            auto c = static_cast<const CallStmt*>(s);
+
+            const Procedure* proc = proctab.lookup(c->name);
+            if (!proc || !proc->body) {
+                std::cerr << "INTERNAL ERROR: procedure body missing\n";
+                exit(1);
+            }
+
+            // INLINE: generujemy ciało procedury
+            genStmt(proc->body);
+
+            break;
+        }
+        case StmtKind::IF: {
+            auto i = static_cast<const IfStmt*>(s);
+
+            int elseLabel = newLabel();
+            int endLabel  = newLabel();
+
+            genExpr(i->cond.get());
+            std::cout << "JZERO " << elseLabel << "\n";
+
+            genStmt(i->thenBranch.get());
+            std::cout << "JUMP " << endLabel << "\n";
+
+            std::cout << elseLabel << ":\n";
+            if (i->elseBranch)
+                genStmt(i->elseBranch.get());
+
+            std::cout << endLabel << ":\n";
+            break;
+        }
+        case StmtKind::WHILE: {
+            auto w = static_cast<const WhileStmt*>(s);
+
+            int startLabel = newLabel();
+            int endLabel   = newLabel();
+
+            std::cout << startLabel << ":\n";
+            genExpr(w->cond.get());
+            std::cout << "JZERO " << endLabel << "\n";
+
+            genStmt(w->body.get());
+            std::cout << "JUMP " << startLabel << "\n";
+
+            std::cout << endLabel << ":\n";
+            break;
+        }
+        case StmtKind::REPEAT: {
+            auto r = static_cast<const RepeatStmt*>(s);
+
+            int startLabel = newLabel();
+
+            std::cout << startLabel << ":\n";
+            genStmt(r->body.get());
+            genExpr(r->cond.get());
+            std::cout << "JZERO " << startLabel << "\n";
+            break;
+        }
+        case StmtKind::NOP: {
+            // Nic nie robimy
             break;
         }
     }

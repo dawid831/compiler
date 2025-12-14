@@ -45,7 +45,8 @@ enum class StmtKind {
     ASSIGN,
     READ,
     WRITE,
-    BLOCK
+    BLOCK,
+    CALL          
 };
 
 struct Stmt {
@@ -85,3 +86,10 @@ struct BlockStmt : Stmt {
     }
 };
 
+struct CallStmt : Stmt {
+    std::string name;
+
+    CallStmt(const std::string& n) : name(n) {
+        kind = StmtKind::CALL;
+    }
+};

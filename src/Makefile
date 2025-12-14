@@ -18,6 +18,7 @@ SRC = \
 	symbol_table.cpp \
 	codegen.cpp \
 	ast_print.cpp \
+	procedure_table.cpp \
 	$(LEX_GEN) \
 	$(YACC_GEN)
 	

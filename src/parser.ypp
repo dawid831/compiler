@@ -5,10 +5,14 @@
 %{
 #include <iostream>
 #include <cstdlib>
+#include <vector>
 #include "symbol_table.hpp"
 #include "codegen.hpp"
 #include "ast_print.hpp"
+#include "procedure_table.hpp"
 
+ProcedureTable proctab;
+std::vector<ProcParam> currentParams;
 CodeGen gen;
 SymbolTable symtab;
 extern int yylineno;
@@ -17,6 +21,7 @@ void yyerror(const char *s);
 
 Stmt* programAST = nullptr;
 bool verbose = false;
+char currentParamMode = 'T';
 %}
 
 /* ==== UNION ==== */
@@ -25,11 +30,13 @@ bool verbose = false;
     char* id;
     Expr* expr;
     Stmt* stmt;
+    int argCount;
 }
 
+%type <argCount> args
 %type <expr> expression value
 %type <stmt> command commands main
-%type <id> identifier
+%type <id> identifier proc_call
 
 /* ==== TOKENY ==== */
 %token PROGRAM IS IN END PROCEDURE
@@ -69,8 +76,14 @@ program_all
     ;
 
 procedures
-    : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";}
-    | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";}
+    : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
+                                                                                symtab.leaveScope();
+                                                                                currentParams.clear();
+                                                                            }
+    | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
+                                                                                symtab.leaveScope();
+                                                                                currentParams.clear();
+                                                                            }
     | /* empty */                                                           {if (verbose) std::cout << "[PARSE] procedures empty\n";}
     ;
 
@@ -106,7 +119,9 @@ command
     | REPEAT commands UNTIL condition SEM                                   {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";}
     | FOR PIDENTIFIER FROM value TO value DO commands ENDFOR                {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";}
     | FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";}
-    | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";}
+    | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";
+                                                                                $$ = new CallStmt($1);
+                                                                            }
     | READ identifier SEM                                                   {if (verbose) std::cout << "[PARSE] command READ\n";
                                                                                 $$ = new ReadStmt($2);
                                                                             }
@@ -116,11 +131,29 @@ command
     ;
 
 proc_head
-    : PIDENTIFIER LBR args_decl RBR                                         {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";}
+    : PIDENTIFIER {
+        symtab.enterScope();
+        currentParams.clear();
+      } LBR args_decl RBR                                         {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
+ 
+                                                                                if (!proctab.declareProcedure($1, currentParams)) {
+                                                                                    yyerror("Procedure redeclared");
+                                                                                }
+                                                                            }
     ;
 
 proc_call
-    : PIDENTIFIER LBR args RBR                                              {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";}
+    : PIDENTIFIER LBR args RBR                                              {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";
+                                                                                const auto* proc = proctab.lookup($1);
+                                                                                if (!proc) {
+                                                                                    yyerror("Call to undeclared procedure");
+                                                                                }
+                                                                                if (proc->params.size() != static_cast<size_t>($3)) {
+                                                                                    yyerror("Wrong number of procedure arguments");
+                                                                                }
+
+                                                                                $$ = $1;
+                                                                            }
     ;
 
 declarations
@@ -147,20 +180,31 @@ declarations
     ;
 
 args_decl
-    : args_decl COM type PIDENTIFIER                                        {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";}
-    | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";}
+    : args_decl COM type PIDENTIFIER                                        {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";
+                                                                                currentParams.push_back({currentParamMode, $4});
+                                                                                symtab.declareVariable($4); // parametr = zmienna w scope procedury
+                                                                            }
+    | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
+                                                                                currentParams.clear();
+                                                                                currentParams.push_back({currentParamMode, $2});
+                                                                                symtab.declareVariable($2);
+                                                                            }
     ;
 
 type
     : /* empty */                                                           {if (verbose) std::cout << "[PARSE] type empty\n";}
-    | T                                                                     {if (verbose) std::cout << "[PARSE] type T\n";}
-    | I                                                                     {if (verbose) std::cout << "[PARSE] type I\n";}
-    | O                                                                     {if (verbose) std::cout << "[PARSE] type O\n";}
+    | T                                                                     {if (verbose) std::cout << "[PARSE] type T\n"; currentParamMode = 'T';}
+    | I                                                                     {if (verbose) std::cout << "[PARSE] type I\n"; currentParamMode = 'I';}
+    | O                                                                     {if (verbose) std::cout << "[PARSE] type O\n"; currentParamMode = 'O';}
     ;
 
 args
-    : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";}
-    | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";}
+    : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";
+                                                                                $$ = $1 + 1;
+                                                                            }
+    | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";
+                                                                                $$ = 1;
+                                                                            }
     ;
 
 expression

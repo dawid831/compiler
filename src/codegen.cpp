@@ -28,6 +28,10 @@ void CodeGen::genStmt(const Stmt* s) {
             std::cout << "WRITE\n";
             break;
         }
+        case StmtKind::CALL: {
+            // TODO: implement later
+            break;
+        }
     }
 }
 
@@ -35,26 +39,26 @@ void CodeGen::genExpr(const Expr* e) {
     if (!e) return;
 
     switch (e->kind) {
-    case ExprKind::CONST: {
-        auto c = static_cast<const ConstExpr*>(e);
-        std::cout << "LOAD_CONST " << c->value << "\n";
-        break;
-    }
-    case ExprKind::VAR: {
-        auto v = static_cast<const VarExpr*>(e);
-        std::cout << "LOAD " << v->name << "\n";
-        break;
-    }
-    case ExprKind::BINOP: {
-        auto b = static_cast<const BinExpr*>(e);
+        case ExprKind::CONST: {
+            auto c = static_cast<const ConstExpr*>(e);
+            std::cout << "LOAD_CONST " << c->value << "\n";
+            break;
+        }
+        case ExprKind::VAR: {
+            auto v = static_cast<const VarExpr*>(e);
+            std::cout << "LOAD " << v->name << "\n";
+            break;
+        }
+        case ExprKind::BINOP: {
+            auto b = static_cast<const BinExpr*>(e);
 
-        // klasyczna strategia: postorder
-        genExpr(b->left.get());
-        genExpr(b->right.get());
+            // klasyczna strategia: postorder
+            genExpr(b->left.get());
+            genExpr(b->right.get());
 
-        genBinOp(b->op);
-        break;
-    }
+            genBinOp(b->op);
+            break;
+        }
     }
 }
 

@@ -2,6 +2,7 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <vector>
 
 enum class SymbolKind {
     VARIABLE,
@@ -16,12 +17,18 @@ struct Symbol {
 
 class SymbolTable {
 public:
+    SymbolTable() { enterScope(); } // globalny scope
+
+    void enterScope();
+    void leaveScope();
+
     bool declareVariable(const std::string& name);
     bool declareArray(const std::string& name, long long start, long long end);
 
     const Symbol* lookup(const std::string& name) const;
 
-    void dump() const; // debug
+    void dump() const;
+
 private:
-    std::unordered_map<std::string, Symbol> table;
+    std::vector<std::unordered_map<std::string, Symbol>> scopes;
 };

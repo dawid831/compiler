@@ -119,10 +119,11 @@ union YYSTYPE
     char* id;
     Expr* expr;
     Stmt* stmt;
-    int argCount;
     CondExpr* cond;
 
-#line 126 "parser.tab.hpp"
+    std::vector<char*>* idlist;
+
+#line 127 "parser.tab.hpp"
 
 };
 typedef union YYSTYPE YYSTYPE;

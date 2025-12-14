@@ -1,13 +1,45 @@
 #include "codegen.hpp"
 
+// pamięć programu
 std::unordered_map<std::string, int> memory;
 int nextAddr = 0;
+
+// pamięć tymczasowa (BEZPIECZNA)
+std::unordered_map<std::string, int> tmpMemory;
+int nextTmpAddr = 100000;   // DUŻY OFFSET
+
+std::vector<std::unordered_map<std::string,int>> paramEnv;
+
+struct OutCopy {
+    int localAddr;
+    int callerAddr;
+};
 
 int getAddr(const std::string& name) {
     if (!memory.count(name))
         memory[name] = nextAddr++;
     return memory[name];
 }
+
+int getTmpAddr(const std::string& name) {
+    if (!tmpMemory.count(name))
+        tmpMemory[name] = nextTmpAddr++;
+    return tmpMemory[name];
+}
+
+int resolveAddr(const std::string& name) {
+    // Szukamy od najgłębszego (ostatniego) wywołania procedury
+    for (int i = (int)paramEnv.size() - 1; i >= 0; --i) {
+        auto it = paramEnv[i].find(name);
+        if (it != paramEnv[i].end()) {
+            return it->second;   // ← adres argumentu
+        }
+    }
+    // Jeśli nie parametr – zwykła zmienna
+    return getAddr(name);
+}
+
+
 
 void CodeGen::flush() {
     for (auto& line : lines) {
@@ -171,12 +203,13 @@ void CodeGen::genStmt(const Stmt* s) {
         case StmtKind::ASSIGN: {
             auto a = static_cast<const AssignStmt*>(s);
             genExpr(a->rhs.get());
-            emit("STORE " + std::to_string(getAddr(a->lhs)));
+            emit("STORE " + std::to_string(resolveAddr(a->lhs)));
             break;
         }
         case StmtKind::READ: {
             auto r = static_cast<const ReadStmt*>(s);
-            emit("READ " + std::to_string(getAddr(r->name)));
+            emit("READ");
+            emit("STORE " + std::to_string(resolveAddr(r->name)));
             break;
         }
         case StmtKind::WRITE: {
@@ -187,16 +220,34 @@ void CodeGen::genStmt(const Stmt* s) {
         }
         case StmtKind::CALL: {
             auto c = static_cast<const CallStmt*>(s);
-
             const Procedure* proc = proctab.lookup(c->name);
-            if (!proc || !proc->body) {
-                std::cerr << "INTERNAL ERROR: procedure body missing\n";
-                exit(1);
+
+            std::unordered_map<std::string,int> frame;
+            std::vector<OutCopy> outCopies;   // ← lokalne
+
+            for (size_t i = 0; i < proc->params.size(); ++i) {
+                const auto& param = proc->params[i];
+                const std::string& actual = c->args[i];
+
+                if (param.mode == 'I' || param.mode == 'T') {
+                    frame[param.name] = resolveAddr(actual);
+                }
+                else if (param.mode == 'O') {
+                    int local = getTmpAddr("__out_" + param.name + "_" + std::to_string(newLabel()));
+                    frame[param.name] = local;
+                    outCopies.push_back({local, resolveAddr(actual)});
+                }
             }
 
-            // INLINE: generujemy ciało procedury
+            paramEnv.push_back(std::move(frame));
             genStmt(proc->body);
 
+            for (auto& cpy : outCopies) {
+                emit("LOAD "  + std::to_string(cpy.localAddr));
+                emit("STORE " + std::to_string(cpy.callerAddr));
+            }
+
+            paramEnv.pop_back();
             break;
         }
         case StmtKind::IF: {
@@ -253,7 +304,6 @@ void CodeGen::genStmt(const Stmt* s) {
             auto f = static_cast<const ForStmt*>(s);
 
             int startLabel = newLabel();
-            int bodyLabel  = newLabel();
             int endLabel   = newLabel();
             int skipLabel = newLabel();
 
@@ -278,7 +328,7 @@ void CodeGen::genStmt(const Stmt* s) {
 
             // iterator = from
             genExpr(f->from.get());
-            emit("STORE " + std::to_string(getAddr(f->iterator)));
+            emit("STORE " + std::to_string(resolveAddr(f->iterator)));
 
             // licznik iteracji:
             // TO:   cnt = to - from + 1
@@ -303,27 +353,27 @@ void CodeGen::genStmt(const Stmt* s) {
             // +1
             emit("INC a");
             std::string counter = "__for_cnt_" + std::to_string(startLabel);
-            emit("STORE " + std::to_string(getAddr(counter)));
+            emit("STORE " + std::to_string(getTmpAddr(counter)));
 
             markLabel(startLabel);
-            emit("LOAD " + std::to_string(getAddr(counter)));
+            emit("LOAD " + std::to_string(getTmpAddr(counter)));
             emit("JZERO @L" + std::to_string(endLabel));
 
             // body
             genStmt(f->body.get());
 
             // iterator ++ / --
-            emit("LOAD " + std::to_string(getAddr(f->iterator)));
+            emit("LOAD " + std::to_string(resolveAddr(f->iterator)));
             if (f->downto)
                 emit("DEC a");
             else
                 emit("INC a");
-            emit("STORE " + std::to_string(getAddr(f->iterator)));
+            emit("STORE " + std::to_string(resolveAddr(f->iterator)));
 
             // cnt--
-            emit("LOAD " + std::to_string(getAddr(counter)));
+            emit("LOAD " + std::to_string(getTmpAddr(counter)));
             emit("DEC a");
-            emit("STORE " + std::to_string(getAddr(counter)));
+            emit("STORE " + std::to_string(getTmpAddr(counter)));
 
             emit("JUMP @L" + std::to_string(startLabel));
             markLabel(skipLabel);
@@ -346,7 +396,7 @@ void CodeGen::genExpr(const Expr* e) {
         }
         case ExprKind::VAR: {
             auto v = static_cast<const VarExpr*>(e);
-            emit("LOAD " + std::to_string(getAddr(v->name)));
+            emit("LOAD " + std::to_string(resolveAddr(v->name)));
             break;
         }
         case ExprKind::BINOP: {
@@ -374,33 +424,33 @@ void CodeGen::genExpr(const Expr* e) {
                     // Wejście: po Twoim schemacie
                     // rb = left (po SWP b), ra = right (po genExpr(right))
                     // zapisujemy multiplier (ra) do mulTmp
-                    emit("STORE " + std::to_string(getAddr(mulTmp)));
+                    emit("STORE " + std::to_string(getTmpAddr(mulTmp)));
 
                     // res = 0
                     emit("RST a");
-                    emit("STORE " + std::to_string(getAddr(mulRes)));
+                    emit("STORE " + std::to_string(getTmpAddr(mulRes)));
 
                     // multiplicand jest w rb (left) – zostawiamy w rb
 
                     markLabel(loopLabel);
 
                     // if tmp == 0 -> end
-                    emit("LOAD " + std::to_string(getAddr(mulTmp)));
+                    emit("LOAD " + std::to_string(getTmpAddr(mulTmp)));
                     emit("JZERO @L" + std::to_string(endLabel));
 
                     // sprawdź nieparzystość: tmp - 2*(tmp/2)
                     emit("SHR a");
                     emit("SHL a");
                     emit("SWP b"); // b = evenPart, a = multiplicand (było w b)  -> UWAGA: utrzymujemy b jako evenPart
-                    emit("LOAD " + std::to_string(getAddr(mulTmp)));
+                    emit("LOAD " + std::to_string(getTmpAddr(mulTmp)));
                     emit("SUB b");
                     emit("JZERO @L" + std::to_string(skipLabel));
 
                     // res += multiplicand (multiplicand trzeba mieć w b)
                     emit("SWP b"); // b = multiplicand, a = (tmp - evenPart)
-                    emit("LOAD " + std::to_string(getAddr(mulRes)));
+                    emit("LOAD " + std::to_string(getTmpAddr(mulRes)));
                     emit("ADD b");
-                    emit("STORE " + std::to_string(getAddr(mulRes)));
+                    emit("STORE " + std::to_string(getTmpAddr(mulRes)));
 
                     markLabel(skipLabel);
 
@@ -410,106 +460,137 @@ void CodeGen::genExpr(const Expr* e) {
                     emit("SWP b");
 
                     // tmp >>= 1
-                    emit("LOAD " + std::to_string(getAddr(mulTmp)));
+                    emit("LOAD " + std::to_string(getTmpAddr(mulTmp)));
                     emit("SHR a");
-                    emit("STORE " + std::to_string(getAddr(mulTmp)));
+                    emit("STORE " + std::to_string(getTmpAddr(mulTmp)));
 
                     emit("JUMP @L" + std::to_string(loopLabel));
 
                     markLabel(endLabel);
-                    emit("LOAD " + std::to_string(getAddr(mulRes)));
+                    emit("LOAD " + std::to_string(getTmpAddr(mulRes)));
                     break;
                 }
                 case BinOp::DIV:
                 case BinOp::MOD: {
                     bool isMod = (b->op == BinOp::MOD);
 
-                    int loop1 = newLabel();
-                    int loop2 = newLabel();
-                    int skip = newLabel();
-                    int end   = newLabel();
+                    int L1      = newLabel(); // find max shift
+                    int L2      = newLabel(); // main loop
+                    int Lskip   = newLabel(); // skip subtract
+                    int Lend    = newLabel(); // end
+                    int Ldiv0   = newLabel(); // divisor == 0
 
-                    std::string A = "__div_a_" + std::to_string(loop1);
-                    std::string B = "__div_b_" + std::to_string(loop1);
-                    std::string Q = "__div_q_" + std::to_string(loop1);
-                    std::string S = "__div_sh_" + std::to_string(loop1);
+                    std::string A = "__div_a_" + std::to_string(L1);
+                    std::string B = "__div_b_" + std::to_string(L1);
+                    std::string Q = "__div_q_" + std::to_string(L1);
+                    std::string C = "__div_c_" + std::to_string(L1); // counter (iterations)
 
-                    // start: ra = divisor, rb = dividend
-                    // save A = dividend
-                    emit("SWP b");           // ra = dividend
-                    emit("STORE " + std::to_string(getAddr(A)));
+                    // wejście po Twoim schemacie:
+                    // rb = left (dividend), ra = right (divisor)
 
-                    // save B = divisor
-                    emit("SWP b");           // ra = divisor
-                    emit("STORE " + std::to_string(getAddr(B)));
+                    // A = dividend
+                    emit("SWP b");
+                    emit("STORE " + std::to_string(getTmpAddr(A)));
 
-                    // Q = 0, shift = 0
+                    // B = divisor
+                    emit("SWP b");
+                    emit("STORE " + std::to_string(getTmpAddr(B)));
+
+                    // jeśli B == 0 → wynik 0
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
+                    emit("JZERO @L" + std::to_string(Ldiv0));
+
+                    // Q = 0
                     emit("RST a");
-                    emit("STORE " + std::to_string(getAddr(Q)));
-                    emit("STORE " + std::to_string(getAddr(S)));
+                    emit("STORE " + std::to_string(getTmpAddr(Q)));
 
-                    // === first loop: find max shift ===
-                    markLabel(loop1);
-                    emit("LOAD " + std::to_string(getAddr(B)));
-                    emit("SHL a");
-                    emit("SWP b");
-                    emit("LOAD " + std::to_string(getAddr(A)));
-                    emit("SWP b");
-                    emit("SUB b");           // (B<<1) - A
-                    emit("JPOS @L" + std::to_string(loop2));
-                    emit("JPOS @L" + std::to_string(loop2));
-
-                    // B <<= 1, shift++
-                    emit("LOAD " + std::to_string(getAddr(B)));
-                    emit("SHL a");
-                    emit("STORE " + std::to_string(getAddr(B)));
-
-                    emit("LOAD " + std::to_string(getAddr(S)));
+                    // C = 1 (będzie = shifts+1)
+                    emit("RST a");
                     emit("INC a");
-                    emit("STORE " + std::to_string(getAddr(S)));
+                    emit("STORE " + std::to_string(getTmpAddr(C)));
 
-                    emit("JUMP @L" + std::to_string(loop1));
+                    // ===== L1: przesuwaj B w lewo dopóki (B<<1) <= A =====
+                    markLabel(L1);
 
-                    // === second loop: subtract & build quotient ===
-                    markLabel(skip);
-                    emit("LOAD " + std::to_string(getAddr(S)));
-                    emit("JZERO @L" + std::to_string(end));
+                    // sprawdź: (B<<1) > A ?
+                    // robimy: a = (B<<1) - A i JPOS => stop
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
+                    emit("SHL a");                     // a = B<<1
+                    emit("SWP b");                     // b = B<<1
+                    emit("LOAD " + std::to_string(getTmpAddr(A)));
+                    emit("SWP b");                     // b = A, a = B<<1
+                    emit("SUB b");                     // a = (B<<1) - A   (ucięte, więc >0 działa)
+                    emit("JPOS @L" + std::to_string(L2));
 
-                    emit("LOAD " + std::to_string(getAddr(A)));
+                    // B <<= 1
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
+                    emit("SHL a");
+                    emit("STORE " + std::to_string(getTmpAddr(B)));
+
+                    // C++  (liczba iteracji pętli 2 rośnie)
+                    emit("LOAD " + std::to_string(getTmpAddr(C)));
+                    emit("INC a");
+                    emit("STORE " + std::to_string(getAddr(C)));
+
+                    emit("JUMP @L" + std::to_string(L1));
+
+                    // ===== L2: main loop (C iteracji) =====
+                    markLabel(L2);
+
+                    emit("LOAD " + std::to_string(getTmpAddr(C)));
+                    emit("JZERO @L" + std::to_string(Lend));
+
+                    // Q <<= 1
+                    emit("LOAD " + std::to_string(getTmpAddr(Q)));
+                    emit("SHL a");
+                    emit("STORE " + std::to_string(getTmpAddr(Q)));
+
+                    // if A < B => skip subtract
+                    // test: (B - A) > 0 ?
+                    emit("LOAD " + std::to_string(getTmpAddr(A)));
                     emit("SWP b");
-                    emit("LOAD " + std::to_string(getAddr(B)));
-                    emit("SUB b");
-                    emit("JPOS @L" + std::to_string(skip));
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
+                    emit("SUB b");                     // a = B - A
+                    emit("JPOS @L" + std::to_string(Lskip));
 
                     // A -= B
-                    emit("STORE " + std::to_string(getAddr(A)));
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
+                    emit("SWP b");
+                    emit("LOAD " + std::to_string(getTmpAddr(A)));
+                    emit("SUB b");                     // a = A - B
+                    emit("STORE " + std::to_string(getTmpAddr(A)));
 
-                    // Q += (1 << shift)
-                    emit("LOAD " + std::to_string(getAddr(Q)));
+                    // Q++
+                    emit("LOAD " + std::to_string(getTmpAddr(Q)));
                     emit("INC a");
-                    emit("STORE " + std::to_string(getAddr(Q)));
+                    emit("STORE " + std::to_string(getTmpAddr(Q)));
 
-                    markLabel(loop2);
+                    markLabel(Lskip);
 
-                    // B >>= 1, shift--
-                    emit("LOAD " + std::to_string(getAddr(B)));
+                    // B >>= 1
+                    emit("LOAD " + std::to_string(getTmpAddr(B)));
                     emit("SHR a");
-                    emit("STORE " + std::to_string(getAddr(B)));
+                    emit("STORE " + std::to_string(getTmpAddr(B)));
 
-                    emit("LOAD " + std::to_string(getAddr(S)));
+                    // C--
+                    emit("LOAD " + std::to_string(getTmpAddr(C)));
                     emit("DEC a");
-                    emit("STORE " + std::to_string(getAddr(S)));
+                    emit("STORE " + std::to_string(getTmpAddr(C)));
 
-                    emit("JUMP @L" + std::to_string(loop2));
+                    emit("JUMP @L" + std::to_string(L2));
 
-                    markLabel(end);
-                    if (isMod)
-                        emit("LOAD " + std::to_string(getAddr(A)));
-                    else
-                        emit("LOAD " + std::to_string(getAddr(Q)));
+                    // divisor==0 → wynik 0
+                    markLabel(Ldiv0);
+                    emit("RST a");
+
+                    markLabel(Lend);
+                    if (isMod) {
+                        emit("LOAD " + std::to_string(getTmpAddr(A)));
+                    } else {
+                        emit("LOAD " + std::to_string(getTmpAddr(Q)));
+                    }
                     break;
                 }
-
                 default:
                     std::cerr << "BINOP not implemented yet\n";
                     exit(1);

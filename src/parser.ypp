@@ -32,15 +32,16 @@ char currentParamMode = 'T';
     char* id;
     Expr* expr;
     Stmt* stmt;
-    int argCount;
     CondExpr* cond;
+
+    std::vector<char*>* idlist;
 }
 
-%type <argCount> args
+%type <idlist> args
 %type <cond> condition
 %type <expr> expression value
-%type <stmt> command commands main
-%type <id> identifier proc_call proc_head
+%type <stmt> command commands main proc_call
+%type <id> identifier proc_head
 
 /* ==== TOKENY ==== */
 %token PROGRAM IS IN END PROCEDURE
@@ -75,6 +76,7 @@ program_all
 
                                                                                 if (verbose) std::cout << "\n=== AST (last statement) ===\n";
                                                                                 gen.genStmt(programAST);
+                                                                                gen.finish();
                                                                                 gen.flush();
                                                                                 //printStmt(lastStmt);
                                                                             }
@@ -156,7 +158,7 @@ command
                                                                                                 true);
                                                                             }
     | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";
-                                                                                $$ = new CallStmt($1);
+                                                                                $$ = $1;
                                                                             }
     | READ identifier SEM                                                   {if (verbose) std::cout << "[PARSE] command READ\n";
                                                                                 $$ = new ReadStmt($2);
@@ -182,14 +184,17 @@ proc_head
 proc_call
     : PIDENTIFIER LBR args RBR                                              {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";
                                                                                 const auto* proc = proctab.lookup($1);
-                                                                                if (!proc) {
-                                                                                    yyerror("Call to undeclared procedure");
-                                                                                }
-                                                                                if (proc->params.size() != static_cast<size_t>($3)) {
+                                                                                if (!proc) yyerror("Call to undeclared procedure");
+                                                                                if (proc->params.size() != $3->size())
                                                                                     yyerror("Wrong number of procedure arguments");
-                                                                                }
 
-                                                                                $$ = $1;
+                                                                                std::vector<std::string> callArgs;
+                                                                                callArgs.reserve($3->size());
+                                                                                for (char* s : *$3) callArgs.emplace_back(s);
+
+                                                                                $$ = new CallStmt($1, std::move(callArgs));
+
+                                                                                delete $3;
                                                                             }
     ;
 
@@ -236,10 +241,12 @@ type
 
 args
     : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";
-                                                                                $$ = $1 + 1;
+                                                                                $1->push_back($3);
+                                                                                $$ = $1;
                                                                             }
     | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";
-                                                                                $$ = 1;
+                                                                                $$ = new std::vector<char*>();
+                                                                                $$->push_back($1);
                                                                             }
     ;
 

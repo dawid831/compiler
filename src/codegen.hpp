@@ -16,6 +16,9 @@ public:
     void emitCondJump(const CondExpr* cond, int labelTrue, int labelFalse);
 
     void flush();
+    void finish() {
+        emit("HALT");
+    }
 private:
     const ProcedureTable& proctab;
     int labelCounter = 0;

@@ -95,8 +95,10 @@ struct BlockStmt : Stmt {
 
 struct CallStmt : Stmt {
     std::string name;
+    std::vector<std::string> args;
 
-    CallStmt(const std::string& n) : name(n) {
+    CallStmt(const std::string& n, std::vector<std::string> a)
+        : name(n), args(std::move(a)) {
         kind = StmtKind::CALL;
     }
 };

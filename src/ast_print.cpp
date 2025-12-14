@@ -61,5 +61,7 @@ void printStmt(const Stmt* s, int indentLvl) {
             std::cout << "CALL " << c->name << "\n";
             break;
         }
+        default:
+            break;
     }
 }

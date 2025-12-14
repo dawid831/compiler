@@ -75,6 +75,7 @@ program_all
 
                                                                                 if (verbose) std::cout << "\n=== AST (last statement) ===\n";
                                                                                 gen.genStmt(programAST);
+                                                                                gen.flush();
                                                                                 //printStmt(lastStmt);
                                                                             }
     ;

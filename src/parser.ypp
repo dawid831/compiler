@@ -13,7 +13,7 @@
 
 ProcedureTable proctab;
 std::vector<ProcParam> currentParams;
-CodeGen gen;
+CodeGen gen(proctab);
 SymbolTable symtab;
 extern int yylineno;
 int yylex(void);
@@ -24,6 +24,8 @@ bool verbose = false;
 char currentParamMode = 'T';
 %}
 
+%define parse.error verbose
+
 /* ==== UNION ==== */
 %union {
     long long num;
@@ -31,12 +33,14 @@ char currentParamMode = 'T';
     Expr* expr;
     Stmt* stmt;
     int argCount;
+    CondExpr* cond;
 }
 
 %type <argCount> args
+%type <cond> condition
 %type <expr> expression value
 %type <stmt> command commands main
-%type <id> identifier proc_call
+%type <id> identifier proc_call proc_head
 
 /* ==== TOKENY ==== */
 %token PROGRAM IS IN END PROCEDURE
@@ -67,9 +71,9 @@ char currentParamMode = 'T';
 program_all
     : procedures main                                                       {if (verbose) std::cout << "[PARSE] program_all\n";
                                                                                 programAST = $2;
-                                                                                symtab.dump();
+                                                                                if (verbose) symtab.dump();
 
-                                                                                std::cout << "\n=== AST (last statement) ===\n";
+                                                                                if (verbose) std::cout << "\n=== AST (last statement) ===\n";
                                                                                 gen.genStmt(programAST);
                                                                                 //printStmt(lastStmt);
                                                                             }
@@ -77,10 +81,16 @@ program_all
 
 procedures
     : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
+                                                                                auto* body = static_cast<BlockStmt*>($7);
+                                                                                proctab.defineBody($3, body);
+                                                                                
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
     | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
+                                                                                auto* body = static_cast<BlockStmt*>($6);
+                                                                                proctab.defineBody($3, body);
+                                                                                
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
@@ -113,12 +123,37 @@ command
     : identifier ASSIGN expression SEM                                      {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
                                                                                 $$ = new AssignStmt($1, std::unique_ptr<Expr>($3));
                                                                             }
-    | IF condition THEN commands ELSE commands ENDIF                        {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";}
-    | IF condition THEN commands ENDIF                                      {if (verbose) std::cout << "[PARSE] command IF THEN\n";}
-    | WHILE condition DO commands ENDWHILE                                  {if (verbose) std::cout << "[PARSE] command WHILE DO\n";}
-    | REPEAT commands UNTIL condition SEM                                   {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";}
-    | FOR PIDENTIFIER FROM value TO value DO commands ENDFOR                {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";}
-    | FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";}
+    | IF condition THEN commands ELSE commands ENDIF                        {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";
+                                                                                $$ = new IfStmt(std::unique_ptr<CondExpr>($2),
+                                                                                                std::unique_ptr<Stmt>($4),
+                                                                                                std::unique_ptr<Stmt>($6));
+                                                                            }
+    | IF condition THEN commands ENDIF                                      {if (verbose) std::cout << "[PARSE] command IF THEN\n";
+                                                                                $$ = new IfStmt(std::unique_ptr<CondExpr>($2),
+                                                                                                std::unique_ptr<Stmt>($4));
+                                                                            }
+    | WHILE condition DO commands ENDWHILE                                  {if (verbose) std::cout << "[PARSE] command WHILE DO\n";
+                                                                                $$ = new WhileStmt(std::unique_ptr<CondExpr>($2),
+                                                                                                    std::unique_ptr<Stmt>($4));
+                                                                            }
+    | REPEAT commands UNTIL condition SEM                                   {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";
+                                                                                $$ = new RepeatStmt(std::unique_ptr<Stmt>($2),
+                                                                                                    std::unique_ptr<CondExpr>($4));
+                                                                            }
+    | FOR PIDENTIFIER FROM value TO value DO commands ENDFOR                {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";
+                                                                                $$ = new ForStmt($2,
+                                                                                                std::unique_ptr<Expr>($4),
+                                                                                                std::unique_ptr<Expr>($6),
+                                                                                                std::unique_ptr<Stmt>($8),
+                                                                                                false);
+                                                                            }
+    | FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";
+                                                                                $$ = new ForStmt($2,
+                                                                                                std::unique_ptr<Expr>($4),
+                                                                                                std::unique_ptr<Expr>($6),
+                                                                                                std::unique_ptr<Stmt>($8),
+                                                                                                true);
+                                                                            }
     | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";
                                                                                 $$ = new CallStmt($1);
                                                                             }
@@ -131,14 +166,15 @@ command
     ;
 
 proc_head
-    : PIDENTIFIER {
-        symtab.enterScope();
-        currentParams.clear();
-      } LBR args_decl RBR                                         {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
- 
+    : PIDENTIFIER                                                           {
+                                                                                symtab.enterScope();
+                                                                                currentParams.clear();
+                                                                            } 
+      LBR args_decl RBR                                                     {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
                                                                                 if (!proctab.declareProcedure($1, currentParams)) {
                                                                                     yyerror("Procedure redeclared");
                                                                                 }
+                                                                                $$ = $1;
                                                                             }
     ;
 
@@ -185,7 +221,6 @@ args_decl
                                                                                 symtab.declareVariable($4); // parametr = zmienna w scope procedury
                                                                             }
     | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
-                                                                                currentParams.clear();
                                                                                 currentParams.push_back({currentParamMode, $2});
                                                                                 symtab.declareVariable($2);
                                                                             }
@@ -239,12 +274,36 @@ expression
     ;
 
 condition
-    : value EQ value                                                        {if (verbose) std::cout << "[PARSE] condition EQ\n";}
-    | value NEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition NEQ\n";}
-    | value GT value                                                        {if (verbose) std::cout << "[PARSE] condition GT\n";}
-    | value LT value                                                        {if (verbose) std::cout << "[PARSE] condiition LT\n";}
-    | value GEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition GEQ\n";}
-    | value LEQ value                                                       {if (verbose) std::cout << "[PARSE] condition LEQ\n";}
+    : value EQ value                                                        {if (verbose) std::cout << "[PARSE] condition EQ\n";
+                                                                                $$ = new CondExpr(CondOp::EQ,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value NEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition NEQ\n";
+                                                                                $$ = new CondExpr(CondOp::NEQ,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value GT value                                                        {if (verbose) std::cout << "[PARSE] condition GT\n";
+                                                                                $$ = new CondExpr(CondOp::GT,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value LT value                                                        {if (verbose) std::cout << "[PARSE] condiition LT\n";
+                                                                                $$ = new CondExpr(CondOp::LT,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value GEQ value                                                       {if (verbose) std::cout << "[PARSE] condiition GEQ\n";
+                                                                                $$ = new CondExpr(CondOp::GEQ,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
+    | value LEQ value                                                       {if (verbose) std::cout << "[PARSE] condition LEQ\n";
+                                                                                $$ = new CondExpr(CondOp::LEQ,
+                                                                                                std::unique_ptr<Expr>($1),
+                                                                                                std::unique_ptr<Expr>($3));
+                                                                            }
     ;
 
 value

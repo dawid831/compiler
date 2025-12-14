@@ -52,11 +52,11 @@ enum class StmtKind {
     IF,
     WHILE,
     REPEAT,
+    FOR,
     NOP          
 };
 
 struct Stmt {
-    std::unique_ptr<CondExpr> cond;
     StmtKind kind;
     virtual ~Stmt() = default;
 };
@@ -101,12 +101,23 @@ struct CallStmt : Stmt {
     }
 };
 
-struct IfStmt : Stmt {
-    std::unique_ptr<Expr> cond;
-    std::unique_ptr<Stmt> thenBranch;
-    std::unique_ptr<Stmt> elseBranch; // może być nullptr
+struct CondExpr {
+    CondOp op;
+    std::unique_ptr<Expr> left;
+    std::unique_ptr<Expr> right;
 
-    IfStmt(std::unique_ptr<Expr> c,
+    CondExpr(CondOp op,
+             std::unique_ptr<Expr> l,
+             std::unique_ptr<Expr> r)
+        : op(op), left(std::move(l)), right(std::move(r)) {}
+};
+
+struct IfStmt : Stmt {
+    std::unique_ptr<CondExpr> cond;
+    std::unique_ptr<Stmt> thenBranch;
+    std::unique_ptr<Stmt> elseBranch;
+
+    IfStmt(std::unique_ptr<CondExpr> c,
            std::unique_ptr<Stmt> t,
            std::unique_ptr<Stmt> e = nullptr)
         : cond(std::move(c)),
@@ -117,33 +128,48 @@ struct IfStmt : Stmt {
 };
 
 struct WhileStmt : Stmt {
-    std::unique_ptr<Expr> cond;
+    std::unique_ptr<CondExpr> cond;
     std::unique_ptr<Stmt> body;
 
-    WhileStmt(std::unique_ptr<Expr> c,
+    WhileStmt(std::unique_ptr<CondExpr> c,
               std::unique_ptr<Stmt> b)
         : cond(std::move(c)), body(std::move(b)) {
         kind = StmtKind::WHILE;
     }
 };
 
-struct CondExpr {
-    CondOp op;
-    std::unique_ptr<Expr> left;
-    std::unique_ptr<Expr> right;
-};
-
 struct RepeatStmt : Stmt {
     std::unique_ptr<Stmt> body;
-    std::unique_ptr<Expr> cond;
+    std::unique_ptr<CondExpr> cond;
 
     RepeatStmt(std::unique_ptr<Stmt> b,
-               std::unique_ptr<Expr> c)
+               std::unique_ptr<CondExpr> c)
         : body(std::move(b)), cond(std::move(c)) {
         kind = StmtKind::REPEAT;
     }
 };
 
+struct ForStmt : Stmt {
+    std::string iterator;
+    std::unique_ptr<Expr> from;
+    std::unique_ptr<Expr> to;
+    std::unique_ptr<Stmt> body;
+    bool downto;
+
+    ForStmt(const std::string& it,
+            std::unique_ptr<Expr> f,
+            std::unique_ptr<Expr> t,
+            std::unique_ptr<Stmt> b,
+            bool d)
+        : iterator(it),
+          from(std::move(f)),
+          to(std::move(t)),
+          body(std::move(b)),
+          downto(d)
+    {
+        kind = StmtKind::FOR;
+    }
+};
 
 struct NopStmt : Stmt {
     NopStmt() { kind = StmtKind::NOP; }

@@ -1,9 +1,8 @@
 PROGRAM IS
-x
+x, y, z
 IN
-x := 3;
-REPEAT
-  WRITE x;
-  x := x - 1;
-UNTIL x = 0;
+x := 20;
+y := 3;
+z := x / y;
+WRITE z;
 END

@@ -9,6 +9,10 @@ public:
 
     void genStmt(const Stmt* s);
     void genExpr(const Expr* e);
+    void genConst(long long value);
+    void emitCondJump(const CondExpr* cond,
+                    int labelTrue,
+                    int labelFalse);
 
 private:
     const ProcedureTable& proctab;

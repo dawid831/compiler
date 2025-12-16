@@ -28,6 +28,7 @@ private:
     std::vector<std::string> lines;
     std::unordered_map<int,int> labelPos; // label -> linia (index instrukcji)
 
+    void emitArrayAddrToC(const VarExpr* arr);
     void emit(const std::string& s) { lines.push_back(s); }
     void markLabel(int label) { labelPos[label] = (int)lines.size(); }
 };

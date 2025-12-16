@@ -24,9 +24,21 @@ struct ConstExpr : Expr {
 };
 
 struct VarExpr : Expr {
+    ExprKind kind;
     std::string name;
-    VarExpr(const std::string& n) : name(n) { kind = ExprKind::VAR; }
+    int uid;                      // unikalny identyfikator symbolu
+    bool isArray = false;
+    long long arrStart = 0;
+    long long arrEnd = 0;
+    std::unique_ptr<Expr> index;
+
+    VarExpr(const std::string& n, int u, std::unique_ptr<Expr> idx = nullptr)
+        : name(n), uid(u), index(std::move(idx)) {
+        kind = ExprKind::VAR;
+        isArray = (index != nullptr);
+    }
 };
+
 
 struct BinExpr : Expr {
     BinOp op;
@@ -62,18 +74,19 @@ struct Stmt {
 };
 
 struct AssignStmt : Stmt {
-    std::string lhs;
+    std::unique_ptr<VarExpr> lhs;
     std::unique_ptr<Expr> rhs;
 
-    AssignStmt(const std::string& l, std::unique_ptr<Expr> r)
+    AssignStmt(VarExpr* l, std::unique_ptr<Expr> r)
         : lhs(l), rhs(std::move(r)) {
         kind = StmtKind::ASSIGN;
     }
 };
 
 struct ReadStmt : Stmt {
-    std::string name;
-    ReadStmt(const std::string& n) : name(n) {
+    std::unique_ptr<VarExpr> target;
+
+    ReadStmt(VarExpr* t) : target(t) {
         kind = StmtKind::READ;
     }
 };
@@ -153,17 +166,20 @@ struct RepeatStmt : Stmt {
 
 struct ForStmt : Stmt {
     std::string iterator;
+    int iteratorUid;                 // <-- DODAJ
     std::unique_ptr<Expr> from;
     std::unique_ptr<Expr> to;
     std::unique_ptr<Stmt> body;
     bool downto;
 
     ForStmt(const std::string& it,
+            int itUid,               // <-- DODAJ
             std::unique_ptr<Expr> f,
             std::unique_ptr<Expr> t,
             std::unique_ptr<Stmt> b,
             bool d)
         : iterator(it),
+          iteratorUid(itUid),
           from(std::move(f)),
           to(std::move(t)),
           body(std::move(b)),

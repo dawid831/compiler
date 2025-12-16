@@ -18,7 +18,13 @@ SymbolTable symtab;
 extern int yylineno;
 int yylex(void);
 void yyerror(const char *s);
+static std::vector<std::string> forIterStack;
 
+static bool isForIterator(const std::string& name) {
+    for (auto it = forIterStack.rbegin(); it != forIterStack.rend(); ++it)
+        if (*it == name) return true;
+    return false;
+}
 Stmt* programAST = nullptr;
 bool verbose = false;
 char currentParamMode = 'T';
@@ -32,16 +38,18 @@ char currentParamMode = 'T';
     char* id;
     Expr* expr;
     Stmt* stmt;
+    BlockStmt* block;
     CondExpr* cond;
-
     std::vector<char*>* idlist;
 }
 
 %type <idlist> args
 %type <cond> condition
-%type <expr> expression value
-%type <stmt> command commands main proc_call
-%type <id> identifier proc_head
+%type <expr> expression value identifier
+%type <stmt> command main proc_call
+%type <block> commands
+%type <id> proc_head
+%type <num> for_dir
 
 /* ==== TOKENY ==== */
 %token PROGRAM IS IN END PROCEDURE
@@ -84,14 +92,14 @@ program_all
 
 procedures
     : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
-                                                                                auto* body = static_cast<BlockStmt*>($7);
+                                                                                auto* body = $7;
                                                                                 proctab.defineBody($3, body);
                                                                                 
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
     | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
-                                                                                auto* body = static_cast<BlockStmt*>($6);
+                                                                                auto* body = $6;
                                                                                 proctab.defineBody($3, body);
                                                                                 
                                                                                 symtab.leaveScope();
@@ -111,7 +119,7 @@ main
 
 commands
     : commands command                                                      {if (verbose) std::cout << "[PARSE] commands with following command\n";
-                                                                                auto block = static_cast<BlockStmt*>($1);
+                                                                                auto block = $1;
                                                                                 block->stmts.emplace_back($2);
                                                                                 $$ = block;
                                                                             }
@@ -122,9 +130,19 @@ commands
                                                                             }
     ;
 
+for_dir
+    : TO     { $$ = 0; }
+    | DOWNTO { $$ = 1; }
+    ;
+
 command
     : identifier ASSIGN expression SEM                                      {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
-                                                                                $$ = new AssignStmt($1, std::unique_ptr<Expr>($3));
+                                                                                auto v = static_cast<VarExpr*>($1);
+
+                                                                                if (isForIterator(v->name))
+                                                                                    yyerror("Modification of FOR iterator");
+
+                                                                                $$ = new AssignStmt(v, std::unique_ptr<Expr>($3));
                                                                             }
     | IF condition THEN commands ELSE commands ENDIF                        {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";
                                                                                 $$ = new IfStmt(std::unique_ptr<CondExpr>($2),
@@ -143,25 +161,29 @@ command
                                                                                 $$ = new RepeatStmt(std::unique_ptr<Stmt>($2),
                                                                                                     std::unique_ptr<CondExpr>($4));
                                                                             }
-    | FOR PIDENTIFIER FROM value TO value DO commands ENDFOR                {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";
-                                                                                $$ = new ForStmt($2,
-                                                                                                std::unique_ptr<Expr>($4),
-                                                                                                std::unique_ptr<Expr>($6),
-                                                                                                std::unique_ptr<Stmt>($8),
-                                                                                                false);
-                                                                            }
-    | FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";
-                                                                                $$ = new ForStmt($2,
-                                                                                                std::unique_ptr<Expr>($4),
-                                                                                                std::unique_ptr<Expr>($6),
-                                                                                                std::unique_ptr<Stmt>($8),
-                                                                                                true);
-                                                                            }
+    | FOR PIDENTIFIER
+    {
+        symtab.enterScope();
+        symtab.declareVariable($2);
+        forIterStack.push_back($2);
+    }
+    FROM value for_dir value DO commands ENDFOR
+    {
+        const Symbol* itSym = symtab.lookup($2);
+if (!itSym) yyerror("INTERNAL: missing FOR iterator");
+
+$$ = new ForStmt(itSym->uid,
+                std::unique_ptr<Expr>($5),
+                std::unique_ptr<Expr>($7),
+                std::unique_ptr<Stmt>($9),
+                $6 == 1);
+
+    }
     | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";
                                                                                 $$ = $1;
                                                                             }
     | READ identifier SEM                                                   {if (verbose) std::cout << "[PARSE] command READ\n";
-                                                                                $$ = new ReadStmt($2);
+                                                                                $$ = new ReadStmt(static_cast<VarExpr*>($2));
                                                                             }
     | WRITE value SEM                                                       {if (verbose) std::cout << "[PARSE] command WRITE\n";
                                                                                 $$ = new WriteStmt(std::unique_ptr<Expr>($2));
@@ -182,20 +204,20 @@ proc_head
     ;
 
 proc_call
-    : PIDENTIFIER LBR args RBR                                              {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";
-                                                                                const auto* proc = proctab.lookup($1);
-                                                                                if (!proc) yyerror("Call to undeclared procedure");
-                                                                                if (proc->params.size() != $3->size())
-                                                                                    yyerror("Wrong number of procedure arguments");
+    : PIDENTIFIER LBR args RBR                                              {
+          const auto* proc = proctab.lookup($1);
+          if (!proc) yyerror("Call to undeclared procedure");
+          if (proc->params.size() != $3->size())
+              yyerror("Wrong number of procedure arguments");
 
-                                                                                std::vector<std::string> callArgs;
-                                                                                callArgs.reserve($3->size());
-                                                                                for (char* s : *$3) callArgs.emplace_back(s);
+          std::vector<std::string> callArgs;
+          callArgs.reserve($3->size());
+          for (char* s : *$3) callArgs.emplace_back(s);
 
-                                                                                $$ = new CallStmt($1, std::move(callArgs));
+          $$ = new CallStmt(std::string($1), std::move(callArgs));
 
-                                                                                delete $3;
-                                                                            }
+          delete $3;
+      }
     ;
 
 declarations
@@ -223,12 +245,14 @@ declarations
 
 args_decl
     : args_decl COM type PIDENTIFIER                                        {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";
-                                                                                currentParams.push_back({currentParamMode, $4});
-                                                                                symtab.declareVariable($4); // parametr = zmienna w scope procedury
+                                                                                symtab.declareVariable($4);
+                                                                                const Symbol* s = symtab.lookup($4);
+                                                                                currentParams.push_back({currentParamMode, $4, s->uid});
                                                                             }
     | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
-                                                                                currentParams.push_back({currentParamMode, $2});
                                                                                 symtab.declareVariable($2);
+                                                                                const Symbol* s = symtab.lookup($2);
+                                                                                currentParams.push_back({currentParamMode, $2, s->uid});
                                                                             }
     ;
 
@@ -241,10 +265,14 @@ type
 
 args
     : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";
+                                                                                if (symtab.lookup($3)->kind == SymbolKind::ARRAY)
+                                                                                yyerror("Array passed as procedure argument");
                                                                                 $1->push_back($3);
                                                                                 $$ = $1;
                                                                             }
     | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";
+                                                                                if (symtab.lookup($1)->kind == SymbolKind::ARRAY)
+                                                                                yyerror("Array passed as procedure argument");
                                                                                 $$ = new std::vector<char*>();
                                                                                 $$->push_back($1);
                                                                             }
@@ -319,39 +347,40 @@ value
                                                                                 $$ = new ConstExpr($1);
                                                                             }
     | identifier                                                            {if (verbose) std::cout << "[PARSE] value identifier\n";
-                                                                                $$ = new VarExpr($1);
+                                                                                $$ = $1;
                                                                             }
     ;
 
 identifier
     : PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] identifier PID\n";
-                                                                                $$ = $1;
-                                                                                if (!symtab.lookup($1)) {
-                                                                                    yyerror("Use of undeclared variable");
-                                                                                }
+                                                                                const Symbol* sym = symtab.lookup($1);
+                                                                                if (!sym) yyerror("Use of undeclared variable");
+                                                                                $$ = new VarExpr($1, sym->uid);
                                                                             }
     | PIDENTIFIER LSB PIDENTIFIER RSB                                       {if (verbose) std::cout << "[PARSE] identifier [PID]\n";
-                                                                                $$ = $1;
-                                                                                auto sym = symtab.lookup($1);
-                                                                                if (!sym) yyerror("Use of undeclared array");
-                                                                                if (sym->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+                                                                                const Symbol* symArr = symtab.lookup($1);
+                                                                                const Symbol* symIdx = symtab.lookup($3);
+                                                                                if (!symArr) yyerror("Use of undeclared array");
+                                                                                if (symArr->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+                                                                                if (!symIdx) yyerror("Use of undeclared variable");
 
-                                                                                // indeks jest zmienną → NIE sprawdzamy zakresu
-                                                                                if (!symtab.lookup($3)) {
-                                                                                    yyerror("Use of undeclared variable as array index");
-                                                                                }
+                                                                                auto idx = std::make_unique<VarExpr>($3, symIdx->uid);
+                                                                                auto* v  = new VarExpr($1, symArr->uid, std::move(idx));
+                                                                                v->arrStart = symArr->start;
+                                                                                v->arrEnd   = symArr->end;
+
+                                                                                $$ = v;
                                                                             }
     | PIDENTIFIER LSB NUM RSB                                               {if (verbose) std::cout << "[PARSE] identifier [NUM]\n";
-                                                                                $$ = $1;
-                                                                                auto sym = symtab.lookup($1);
-                                                                                if (!sym) {
-                                                                                    yyerror("Use of undeclared array");
-                                                                                }
-                                                                                if (sym->kind != SymbolKind::ARRAY) {
-                                                                                    yyerror("Indexing non-array");
-                                                                                }
-                                                                                if ($3 < sym->start || $3 > sym->end)
-                                                                                    yyerror("Array index out of bounds");
+                                                                                const Symbol* symArr = symtab.lookup($1);
+                                                                                if (!symArr) yyerror("Use of undeclared array");
+                                                                                if (symArr->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+
+                                                                                auto idx = std::make_unique<ConstExpr>($3);
+                                                                                auto* v  = new VarExpr($1, symArr->uid, std::move(idx));
+                                                                                v->arrStart = symArr->start;
+                                                                                v->arrEnd   = symArr->end;
+                                                                                $$ = v;
                                                                             }
     ;
 

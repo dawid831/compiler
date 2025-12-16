@@ -41,13 +41,17 @@ void printStmt(const Stmt* s, int indentLvl) {
     switch (s->kind) {
         case StmtKind::ASSIGN: {
             auto a = static_cast<const AssignStmt*>(s);
-            std::cout << "ASSIGN " << a->lhs << "\n";
+            std::cout << "ASSIGN " << a->lhs->name;
+            if (a->lhs->index) std::cout << "[index]";
+            std::cout << "\n";
             printExpr(a->rhs.get(), indentLvl + 1);
             break;
         }
         case StmtKind::READ: {
             auto r = static_cast<const ReadStmt*>(s);
-            std::cout << "READ " << r->name << "\n";
+            std::cout << "READ " << r->target->name;
+            if (r->target->index) std::cout << "[index]";
+            std::cout << "\n";
             break;
         }
         case StmtKind::WRITE: {

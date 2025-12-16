@@ -11,25 +11,21 @@ void SymbolTable::leaveScope() {
 
 bool SymbolTable::declareVariable(const std::string& name) {
     auto& current = scopes.back();
-    if (current.count(name)) {
-        return false;
-    }
-    current[name] = { SymbolKind::VARIABLE, 0, 0 };
+    if (current.count(name)) return false;
+
+    current[name] = { SymbolKind::VARIABLE, 0, 0, nextUid++ };  // <-- uid
     return true;
 }
 
-bool SymbolTable::declareArray(const std::string& name,
-                               long long start,
-                               long long end) {
+bool SymbolTable::declareArray(const std::string& name, long long start, long long end) {
     auto& current = scopes.back();
-    if (current.count(name)) {
-        return false;
-    }
+    if (current.count(name)) return false;
     if (start > end) {
         std::cerr << "ERROR: invalid array range\n";
         return false;
     }
-    current[name] = { SymbolKind::ARRAY, start, end };
+
+    current[name] = { SymbolKind::ARRAY, start, end, nextUid++ }; // <-- uid
     return true;
 }
 

@@ -13,9 +13,12 @@ struct Symbol {
     SymbolKind kind;
     long long start;   // dla tablic
     long long end;     // dla tablic
+    int uid;
 };
 
 class SymbolTable {
+    std::vector<std::unordered_map<std::string, Symbol>> scopes;
+    int nextUid = 1;
 public:
     SymbolTable() { enterScope(); } // globalny scope
 
@@ -28,7 +31,4 @@ public:
     const Symbol* lookup(const std::string& name) const;
 
     void dump() const;
-
-private:
-    std::vector<std::unordered_map<std::string, Symbol>> scopes;
 };

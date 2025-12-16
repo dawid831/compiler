@@ -113,14 +113,14 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 30 "parser.ypp"
+#line 36 "parser.ypp"
 
     long long num;
     char* id;
     Expr* expr;
     Stmt* stmt;
+    BlockStmt* block;
     CondExpr* cond;
-
     std::vector<char*>* idlist;
 
 #line 127 "parser.tab.hpp"

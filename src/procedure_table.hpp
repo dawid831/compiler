@@ -5,9 +5,11 @@
 #include "ast.hpp"
 
 struct ProcParam {
-    char mode;          // 'T', 'I', 'O'
-    std::string name;
+    char mode;              // 'T','I','O'
+    std::string name;       // nazwa parametru (opcjonalnie do debug)
+    int uid;                // <-- DODAJ
 };
+
 
 struct Procedure {
     std::string name;

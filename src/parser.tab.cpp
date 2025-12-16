@@ -84,12 +84,18 @@ SymbolTable symtab;
 extern int yylineno;
 int yylex(void);
 void yyerror(const char *s);
+static std::vector<std::string> forIterStack;
 
+static bool isForIterator(const std::string& name) {
+    for (auto it = forIterStack.rbegin(); it != forIterStack.rend(); ++it)
+        if (*it == name) return true;
+    return false;
+}
 Stmt* programAST = nullptr;
 bool verbose = false;
 char currentParamMode = 'T';
 
-#line 93 "parser.tab.cpp"
+#line 99 "parser.tab.cpp"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -170,18 +176,20 @@ enum yysymbol_kind_t
   YYSYMBOL_procedures = 50,                /* procedures  */
   YYSYMBOL_main = 51,                      /* main  */
   YYSYMBOL_commands = 52,                  /* commands  */
-  YYSYMBOL_command = 53,                   /* command  */
-  YYSYMBOL_proc_head = 54,                 /* proc_head  */
+  YYSYMBOL_for_dir = 53,                   /* for_dir  */
+  YYSYMBOL_command = 54,                   /* command  */
   YYSYMBOL_55_1 = 55,                      /* $@1  */
-  YYSYMBOL_proc_call = 56,                 /* proc_call  */
-  YYSYMBOL_declarations = 57,              /* declarations  */
-  YYSYMBOL_args_decl = 58,                 /* args_decl  */
-  YYSYMBOL_type = 59,                      /* type  */
-  YYSYMBOL_args = 60,                      /* args  */
-  YYSYMBOL_expression = 61,                /* expression  */
-  YYSYMBOL_condition = 62,                 /* condition  */
-  YYSYMBOL_value = 63,                     /* value  */
-  YYSYMBOL_identifier = 64                 /* identifier  */
+  YYSYMBOL_proc_head = 56,                 /* proc_head  */
+  YYSYMBOL_57_2 = 57,                      /* $@2  */
+  YYSYMBOL_proc_call = 58,                 /* proc_call  */
+  YYSYMBOL_declarations = 59,              /* declarations  */
+  YYSYMBOL_args_decl = 60,                 /* args_decl  */
+  YYSYMBOL_type = 61,                      /* type  */
+  YYSYMBOL_args = 62,                      /* args  */
+  YYSYMBOL_expression = 63,                /* expression  */
+  YYSYMBOL_condition = 64,                 /* condition  */
+  YYSYMBOL_value = 65,                     /* value  */
+  YYSYMBOL_identifier = 66                 /* identifier  */
 };
 typedef enum yysymbol_kind_t yysymbol_kind_t;
 
@@ -509,16 +517,16 @@ union yyalloc
 /* YYFINAL -- State number of the termination state.  */
 #define YYFINAL  3
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   297
+#define YYLAST   279
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  48
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  17
+#define YYNNTS  19
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  51
+#define YYNRULES  53
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  135
+#define YYNSTATES  133
 
 /* YYMAXUTOK -- Last valid token kind.  */
 #define YYMAXUTOK   302
@@ -572,12 +580,12 @@ static const yytype_int8 yytranslate[] =
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_int16 yyrline[] =
 {
-       0,    73,    73,    86,    93,   100,   104,   107,   113,   118,
-     126,   129,   134,   138,   142,   146,   153,   160,   163,   166,
-     172,   172,   185,   202,   207,   212,   217,   225,   229,   236,
-     237,   238,   239,   243,   247,   254,   257,   262,   267,   272,
-     277,   285,   290,   295,   300,   305,   310,   318,   321,   327,
-     333,   344
+       0,    81,    81,    94,   101,   108,   112,   115,   121,   126,
+     134,   135,   139,   147,   152,   156,   160,   165,   164,   182,
+     185,   188,   194,   194,   207,   224,   229,   234,   239,   247,
+     252,   260,   261,   262,   263,   267,   273,   282,   285,   290,
+     295,   300,   305,   313,   318,   323,   328,   333,   338,   346,
+     349,   355,   360,   374
 };
 #endif
 
@@ -599,9 +607,9 @@ static const char *const yytname[] =
   "READ", "WRITE", "ASSIGN", "NEQ", "LEQ", "GEQ", "PLUS", "MINUS", "MUL",
   "DIV", "MOD", "EQ", "LT", "GT", "T", "I", "O", "SEM", "COM", "COL",
   "LBR", "RBR", "LSB", "RSB", "NUM", "PIDENTIFIER", "$accept",
-  "program_all", "procedures", "main", "commands", "command", "proc_head",
-  "$@1", "proc_call", "declarations", "args_decl", "type", "args",
-  "expression", "condition", "value", "identifier", YY_NULLPTR
+  "program_all", "procedures", "main", "commands", "for_dir", "command",
+  "$@1", "proc_head", "$@2", "proc_call", "declarations", "args_decl",
+  "type", "args", "expression", "condition", "value", "identifier", YY_NULLPTR
 };
 
 static const char *
@@ -625,20 +633,20 @@ yysymbol_name (yysymbol_kind_t yysymbol)
    STATE-NUM.  */
 static const yytype_int16 yypact[] =
 {
-     -38,    13,    20,   -38,    17,    -2,   -38,    -3,   -38,    25,
-     250,    -6,     1,    -7,    -1,     2,     2,     6,   250,    24,
-       2,   -37,   114,   -38,    21,    57,    37,   250,    39,    -4,
-     250,     3,   -38,    40,    76,    -9,   -38,    74,    72,   180,
-      50,    52,    45,     4,   -38,   -38,   -38,     2,    58,   127,
-      49,   -38,   -38,   -38,   -21,    53,   140,   250,   250,     2,
-       2,     2,     2,     2,     2,   250,     2,     2,   -38,   -38,
-     -38,   -12,    60,    63,    62,    38,    68,   -38,    75,    -4,
-     -38,   -38,   -38,   158,   174,   -38,   -38,   -38,   -38,   -38,
-     -38,   196,    56,    64,    55,   -38,   -38,   -38,   -38,     2,
-       2,     2,     2,     2,    78,    83,    84,   -38,   250,   -38,
-     -38,     2,     2,   -38,   -38,   -38,   -38,   -38,   -38,   -38,
-     -38,    79,   -38,   214,    96,   117,    87,   -38,   250,   250,
-     -38,   227,   233,   -38,   -38
+     -38,    13,    20,   -38,    28,    -3,   -38,    -2,   -38,    31,
+     232,    -7,     1,    -4,    -1,     2,     2,     6,   232,    23,
+       2,   -37,   113,   -38,    21,    48,    35,   232,    36,   -16,
+     232,     3,   -38,    38,    75,    -9,   -38,    72,   -38,   179,
+      47,    49,    42,     4,   -38,   -38,   -38,     2,    50,   126,
+      55,   -38,   -38,   -38,   -12,    45,   139,   232,   232,     2,
+       2,     2,     2,     2,     2,   232,    77,     2,   -38,   -38,
+     -38,   -10,    56,    58,    61,    37,    59,   -38,    63,   -16,
+     -38,   -38,   -38,   157,   173,   -38,   -38,   -38,   -38,   -38,
+     -38,   195,     2,    65,    60,   -38,   -38,   -38,   -38,     2,
+       2,     2,     2,     2,    73,    67,    76,   -38,   232,   -38,
+     -38,    62,   -38,   -38,   -38,   -38,   -38,   -38,   -38,   -38,
+      64,   -38,   213,   -38,   -38,     2,    79,   -38,   109,   -38,
+     232,   226,   -38
 };
 
 /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -646,34 +654,34 @@ static const yytype_int16 yypact[] =
    means the default is an error.  */
 static const yytype_int8 yydefact[] =
 {
-       5,     0,     0,     1,     0,     0,     2,     0,    20,     0,
-       0,    25,     0,     0,     0,     0,     0,     0,     0,     0,
-       0,    49,     0,     9,     0,     0,     0,     0,     0,    29,
-       0,     0,    47,    49,     0,     0,    48,     0,     0,     0,
-       0,     0,     0,     0,     7,     8,    17,     0,     0,     0,
-      23,    30,    31,    32,     0,     0,     0,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,     0,    18,    19,
-      34,     0,     0,     0,     0,    35,     0,     6,     0,    29,
-      21,    28,     4,     0,     0,    42,    46,    45,    41,    44,
-      43,     0,     0,     0,     0,    22,    51,    50,    10,     0,
-       0,     0,     0,     0,     0,     0,     0,     3,     0,    12,
-      13,     0,     0,    14,    33,    36,    37,    38,    39,    40,
-      26,     0,    27,     0,     0,     0,     0,    11,     0,     0,
-      24,     0,     0,    15,    16
+       5,     0,     0,     1,     0,     0,     2,     0,    22,     0,
+       0,    27,     0,     0,     0,     0,     0,     0,     0,     0,
+       0,    51,     0,     9,     0,     0,     0,     0,     0,    31,
+       0,     0,    49,    51,     0,     0,    50,     0,    17,     0,
+       0,     0,     0,     0,     7,     8,    19,     0,     0,     0,
+      25,    32,    33,    34,     0,     0,     0,     0,     0,     0,
+       0,     0,     0,     0,     0,     0,     0,     0,    20,    21,
+      36,     0,     0,     0,     0,    37,     0,     6,     0,    31,
+      23,    30,     4,     0,     0,    44,    48,    47,    43,    46,
+      45,     0,     0,     0,     0,    24,    53,    52,    12,     0,
+       0,     0,     0,     0,     0,     0,     0,     3,     0,    14,
+      15,     0,    16,    35,    38,    39,    40,    41,    42,    28,
+       0,    29,     0,    10,    11,     0,     0,    13,     0,    26,
+       0,     0,    18
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-     -38,   -38,   -38,   -38,   -18,   -19,   -38,   -38,   -38,   124,
-     -38,    61,   -38,   -38,   -15,    16,    -5
+     -38,   -38,   -38,   -38,   -18,   -38,   -20,   -38,   -38,   -38,
+     -38,   112,   -38,    51,   -38,   -38,   -15,    14,    -5
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int8 yydefgoto[] =
 {
-       0,     1,     2,     6,    22,    23,     9,    13,    24,    12,
-      54,    55,    71,    74,    34,    35,    25
+       0,     1,     2,     6,    22,   125,    23,    66,     9,    13,
+      24,    12,    54,    55,    71,    74,    34,    35,    25
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -681,112 +689,108 @@ static const yytype_int8 yydefgoto[] =
    number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_uint8 yytable[] =
 {
-      39,    37,    10,    45,    30,    42,    27,    43,    57,    49,
-      36,    36,    56,     3,    40,    36,    59,    60,    61,    79,
-      45,     7,    80,     4,    62,    63,    64,     5,    94,    14,
-      45,    95,    51,    52,    53,    29,    41,    45,    26,    83,
-      84,    28,    36,    28,    11,     8,    11,    91,    32,    33,
+      39,    37,    45,    10,    30,    42,    27,    43,    57,    49,
+      36,    36,    56,     3,    40,    36,    59,    60,    61,    45,
+      51,    52,    53,     4,    62,    63,    64,     5,    79,    45,
+      94,    80,     7,    95,    41,    14,    45,    26,    29,    83,
+      84,    28,    36,    28,     8,    11,    11,    91,    32,    33,
       72,    73,    93,    38,    36,    36,    36,    36,    36,    36,
-      46,    36,    36,    75,    45,    45,    99,   100,   101,   102,
-     103,    33,    45,   111,   112,    85,    86,    87,    88,    89,
-      90,    47,    92,    48,    43,    58,    50,    65,    66,    68,
-     123,    69,    70,    78,    36,    36,    36,    36,    36,    76,
-      81,    98,   114,   113,    45,    96,    36,    36,    97,   128,
-     131,   132,    45,    45,   104,   115,   116,   117,   118,   119,
-      44,   105,    15,   120,   121,   126,    16,   124,   125,    17,
-     129,   122,   130,    77,    18,    15,    19,    20,    31,    16,
-     106,     0,    17,     0,     0,     0,    82,    18,    15,    19,
-      20,     0,    16,     0,     0,    17,     0,     0,     0,     0,
-      18,    21,    19,    20,   107,     0,    15,     0,     0,     0,
-      16,     0,     0,    17,    21,     0,     0,     0,    18,     0,
-      19,    20,    15,     0,   108,   109,    16,    21,    15,    17,
-       0,     0,    16,     0,    18,    17,    19,    20,     0,     0,
-      18,    67,    19,    20,    15,    21,     0,     0,    16,     0,
-     110,    17,     0,     0,     0,     0,    18,     0,    19,    20,
-       0,    21,    15,     0,     0,   127,    16,    21,     0,    17,
-       0,     0,     0,     0,    18,    15,    19,    20,     0,    16,
-       0,    15,    17,    21,     0,    16,   133,    18,    17,    19,
-      20,     0,   134,    18,     0,    19,    20,     0,    15,     0,
-       0,    21,    16,     0,     0,    17,     0,     0,     0,     0,
-      18,     0,    19,    20,    21,     0,     0,     0,     0,     0,
+      46,    75,    36,    45,    45,    99,   100,   101,   102,   103,
+      33,    45,    47,    85,    86,    87,    88,    89,    90,   123,
+     124,    48,    43,    50,    58,    65,    68,    36,    69,    70,
+     122,    76,    81,    92,    36,    36,    36,    36,    36,    78,
+      98,    96,    45,    97,   112,   104,   111,   113,   120,   105,
+     126,    45,   131,   114,   115,   116,   117,   118,   119,    44,
+      36,    15,   130,   121,   129,    16,    31,     0,    17,     0,
+     106,     0,    77,    18,    15,    19,    20,     0,    16,   128,
+       0,    17,     0,     0,     0,    82,    18,    15,    19,    20,
+       0,    16,     0,     0,    17,     0,     0,     0,     0,    18,
+      21,    19,    20,   107,     0,    15,     0,     0,     0,    16,
+       0,     0,    17,    21,     0,     0,     0,    18,     0,    19,
+      20,    15,     0,   108,   109,    16,    21,    15,    17,     0,
+       0,    16,     0,    18,    17,    19,    20,     0,     0,    18,
+      67,    19,    20,    15,    21,     0,     0,    16,     0,   110,
+      17,     0,     0,     0,     0,    18,     0,    19,    20,     0,
+      21,    15,     0,     0,   127,    16,    21,     0,    17,     0,
+       0,     0,     0,    18,    15,    19,    20,     0,    16,     0,
+      15,    17,    21,     0,    16,   132,    18,    17,    19,    20,
+       0,     0,    18,     0,    19,    20,     0,     0,     0,     0,
       21,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-       0,     0,     0,     0,     0,     0,     0,    21
+       0,     0,     0,    21,     0,     0,     0,     0,     0,    21
 };
 
 static const yytype_int16 yycheck[] =
 {
-      18,    16,     5,    22,     5,    42,     5,    44,     5,    27,
-      15,    16,    30,     0,    19,    20,    25,    26,    27,    40,
-      39,     4,    43,     3,    33,    34,    35,     7,    40,     4,
-      49,    43,    36,    37,    38,    42,    20,    56,    44,    57,
+      18,    16,    22,     5,     5,    42,     5,    44,     5,    27,
+      15,    16,    30,     0,    19,    20,    25,    26,    27,    39,
+      36,    37,    38,     3,    33,    34,    35,     7,    40,    49,
+      40,    43,     4,    43,    20,     4,    56,    44,    42,    57,
       58,    40,    47,    40,    47,    47,    47,    65,    46,    47,
       46,    47,    67,    47,    59,    60,    61,    62,    63,    64,
-      39,    66,    67,    47,    83,    84,    28,    29,    30,    31,
-      32,    47,    91,    17,    18,    59,    60,    61,    62,    63,
-      64,    24,    66,    46,    44,     9,    47,    13,    16,    39,
-     108,    39,    47,    44,    99,   100,   101,   102,   103,    41,
-      47,    39,    47,    39,   123,    45,   111,   112,    45,    13,
-     128,   129,   131,   132,    46,    99,   100,   101,   102,   103,
-       6,    46,     8,    45,    41,    46,    12,   111,   112,    15,
-      13,    47,    45,     6,    20,     8,    22,    23,    14,    12,
-      79,    -1,    15,    -1,    -1,    -1,     6,    20,     8,    22,
-      23,    -1,    12,    -1,    -1,    15,    -1,    -1,    -1,    -1,
-      20,    47,    22,    23,     6,    -1,     8,    -1,    -1,    -1,
-      12,    -1,    -1,    15,    47,    -1,    -1,    -1,    20,    -1,
-      22,    23,     8,    -1,    10,    11,    12,    47,     8,    15,
-      -1,    -1,    12,    -1,    20,    15,    22,    23,    -1,    -1,
-      20,    21,    22,    23,     8,    47,    -1,    -1,    12,    -1,
-      14,    15,    -1,    -1,    -1,    -1,    20,    -1,    22,    23,
-      -1,    47,     8,    -1,    -1,    11,    12,    47,    -1,    15,
-      -1,    -1,    -1,    -1,    20,     8,    22,    23,    -1,    12,
-      -1,     8,    15,    47,    -1,    12,    19,    20,    15,    22,
-      23,    -1,    19,    20,    -1,    22,    23,    -1,     8,    -1,
-      -1,    47,    12,    -1,    -1,    15,    -1,    -1,    -1,    -1,
-      20,    -1,    22,    23,    47,    -1,    -1,    -1,    -1,    -1,
+      39,    47,    67,    83,    84,    28,    29,    30,    31,    32,
+      47,    91,    24,    59,    60,    61,    62,    63,    64,    17,
+      18,    46,    44,    47,     9,    13,    39,    92,    39,    47,
+     108,    41,    47,    16,    99,   100,   101,   102,   103,    44,
+      39,    45,   122,    45,    39,    46,    92,    47,    41,    46,
+      46,   131,   130,    99,   100,   101,   102,   103,    45,     6,
+     125,     8,    13,    47,    45,    12,    14,    -1,    15,    -1,
+      79,    -1,     6,    20,     8,    22,    23,    -1,    12,   125,
+      -1,    15,    -1,    -1,    -1,     6,    20,     8,    22,    23,
+      -1,    12,    -1,    -1,    15,    -1,    -1,    -1,    -1,    20,
+      47,    22,    23,     6,    -1,     8,    -1,    -1,    -1,    12,
+      -1,    -1,    15,    47,    -1,    -1,    -1,    20,    -1,    22,
+      23,     8,    -1,    10,    11,    12,    47,     8,    15,    -1,
+      -1,    12,    -1,    20,    15,    22,    23,    -1,    -1,    20,
+      21,    22,    23,     8,    47,    -1,    -1,    12,    -1,    14,
+      15,    -1,    -1,    -1,    -1,    20,    -1,    22,    23,    -1,
+      47,     8,    -1,    -1,    11,    12,    47,    -1,    15,    -1,
+      -1,    -1,    -1,    20,     8,    22,    23,    -1,    12,    -1,
+       8,    15,    47,    -1,    12,    19,    20,    15,    22,    23,
+      -1,    -1,    20,    -1,    22,    23,    -1,    -1,    -1,    -1,
       47,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,    -1,
-      -1,    -1,    -1,    -1,    -1,    -1,    -1,    47
+      -1,    -1,    -1,    47,    -1,    -1,    -1,    -1,    -1,    47
 };
 
 /* YYSTOS[STATE-NUM] -- The symbol kind of the accessing symbol of
    state STATE-NUM.  */
 static const yytype_int8 yystos[] =
 {
-       0,    49,    50,     0,     3,     7,    51,     4,    47,    54,
-       5,    47,    57,    55,     4,     8,    12,    15,    20,    22,
-      23,    47,    52,    53,    56,    64,    44,     5,    40,    42,
-       5,    57,    46,    47,    62,    63,    64,    62,    47,    52,
-      64,    63,    42,    44,     6,    53,    39,    24,    46,    52,
-      47,    36,    37,    38,    58,    59,    52,     5,     9,    25,
-      26,    27,    33,    34,    35,    13,    16,    21,    39,    39,
-      47,    60,    46,    47,    61,    63,    41,     6,    44,    40,
-      43,    47,     6,    52,    52,    63,    63,    63,    63,    63,
-      63,    52,    63,    62,    40,    43,    45,    45,    39,    28,
-      29,    30,    31,    32,    46,    46,    59,     6,    10,    11,
-      14,    17,    18,    39,    47,    63,    63,    63,    63,    63,
-      45,    41,    47,    52,    63,    63,    46,    11,    13,    13,
-      45,    52,    52,    19,    19
+       0,    49,    50,     0,     3,     7,    51,     4,    47,    56,
+       5,    47,    59,    57,     4,     8,    12,    15,    20,    22,
+      23,    47,    52,    54,    58,    66,    44,     5,    40,    42,
+       5,    59,    46,    47,    64,    65,    66,    64,    47,    52,
+      66,    65,    42,    44,     6,    54,    39,    24,    46,    52,
+      47,    36,    37,    38,    60,    61,    52,     5,     9,    25,
+      26,    27,    33,    34,    35,    13,    55,    21,    39,    39,
+      47,    62,    46,    47,    63,    65,    41,     6,    44,    40,
+      43,    47,     6,    52,    52,    65,    65,    65,    65,    65,
+      65,    52,    16,    64,    40,    43,    45,    45,    39,    28,
+      29,    30,    31,    32,    46,    46,    61,     6,    10,    11,
+      14,    65,    39,    47,    65,    65,    65,    65,    65,    45,
+      41,    47,    52,    17,    18,    53,    46,    11,    65,    45,
+      13,    52,    19
 };
 
 /* YYR1[RULE-NUM] -- Symbol kind of the left-hand side of rule RULE-NUM.  */
 static const yytype_int8 yyr1[] =
 {
        0,    48,    49,    50,    50,    50,    51,    51,    52,    52,
-      53,    53,    53,    53,    53,    53,    53,    53,    53,    53,
-      55,    54,    56,    57,    57,    57,    57,    58,    58,    59,
-      59,    59,    59,    60,    60,    61,    61,    61,    61,    61,
-      61,    62,    62,    62,    62,    62,    62,    63,    63,    64,
-      64,    64
+      53,    53,    54,    54,    54,    54,    54,    55,    54,    54,
+      54,    54,    57,    56,    58,    59,    59,    59,    59,    60,
+      60,    61,    61,    61,    61,    62,    62,    63,    63,    63,
+      63,    63,    63,    64,    64,    64,    64,    64,    64,    65,
+      65,    66,    66,    66
 };
 
 /* YYR2[RULE-NUM] -- Number of symbols on the right-hand side of rule RULE-NUM.  */
 static const yytype_int8 yyr2[] =
 {
        0,     2,     2,     8,     7,     0,     6,     5,     2,     1,
-       4,     7,     5,     5,     5,     9,     9,     2,     3,     3,
-       0,     5,     4,     3,     8,     1,     6,     4,     2,     0,
-       1,     1,     1,     3,     1,     1,     3,     3,     3,     3,
-       3,     3,     3,     3,     3,     3,     3,     1,     1,     1,
-       4,     4
+       1,     1,     4,     7,     5,     5,     5,     0,    10,     2,
+       3,     3,     0,     5,     4,     3,     8,     1,     6,     4,
+       2,     0,     1,     1,     1,     3,     1,     1,     3,     3,
+       3,     3,     3,     3,     3,     3,     3,     3,     3,     1,
+       1,     1,     4,     4
 };
 
 
@@ -1520,7 +1524,7 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* program_all: procedures main  */
-#line 73 "parser.ypp"
+#line 81 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] program_all\n";
                                                                                 programAST = (yyvsp[0].stmt);
                                                                                 if (verbose) symtab.dump();
@@ -1531,487 +1535,513 @@ yyreduce:
                                                                                 gen.flush();
                                                                                 //printStmt(lastStmt);
                                                                             }
-#line 1535 "parser.tab.cpp"
+#line 1539 "parser.tab.cpp"
     break;
 
   case 3: /* procedures: procedures PROCEDURE proc_head IS declarations IN commands END  */
-#line 86 "parser.ypp"
+#line 94 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
-                                                                                auto* body = static_cast<BlockStmt*>((yyvsp[-1].stmt));
+                                                                                auto* body = (yyvsp[-1].block);
                                                                                 proctab.defineBody((yyvsp[-5].id), body);
                                                                                 
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
-#line 1547 "parser.tab.cpp"
+#line 1551 "parser.tab.cpp"
     break;
 
   case 4: /* procedures: procedures PROCEDURE proc_head IS IN commands END  */
-#line 93 "parser.ypp"
+#line 101 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
-                                                                                auto* body = static_cast<BlockStmt*>((yyvsp[-1].stmt));
+                                                                                auto* body = (yyvsp[-1].block);
                                                                                 proctab.defineBody((yyvsp[-4].id), body);
                                                                                 
                                                                                 symtab.leaveScope();
                                                                                 currentParams.clear();
                                                                             }
-#line 1559 "parser.tab.cpp"
+#line 1563 "parser.tab.cpp"
     break;
 
   case 5: /* procedures: %empty  */
-#line 100 "parser.ypp"
+#line 108 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] procedures empty\n";}
-#line 1565 "parser.tab.cpp"
+#line 1569 "parser.tab.cpp"
     break;
 
   case 6: /* main: PROGRAM IS declarations IN commands END  */
-#line 104 "parser.ypp"
+#line 112 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] main program (with declarations)\n";
-                                                                                (yyval.stmt) = (yyvsp[-1].stmt);
+                                                                                (yyval.stmt) = (yyvsp[-1].block);
                                                                             }
-#line 1573 "parser.tab.cpp"
+#line 1577 "parser.tab.cpp"
     break;
 
   case 7: /* main: PROGRAM IS IN commands END  */
-#line 107 "parser.ypp"
+#line 115 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] main program (no declarations)\n";
-                                                                                (yyval.stmt) = (yyvsp[-1].stmt); 
+                                                                                (yyval.stmt) = (yyvsp[-1].block); 
                                                                             }
-#line 1581 "parser.tab.cpp"
+#line 1585 "parser.tab.cpp"
     break;
 
   case 8: /* commands: commands command  */
-#line 113 "parser.ypp"
+#line 121 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] commands with following command\n";
-                                                                                auto block = static_cast<BlockStmt*>((yyvsp[-1].stmt));
+                                                                                auto block = (yyvsp[-1].block);
                                                                                 block->stmts.emplace_back((yyvsp[0].stmt));
-                                                                                (yyval.stmt) = block;
+                                                                                (yyval.block) = block;
                                                                             }
-#line 1591 "parser.tab.cpp"
+#line 1595 "parser.tab.cpp"
     break;
 
   case 9: /* commands: command  */
-#line 118 "parser.ypp"
+#line 126 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] commands with a command\n";
                                                                                 auto block = new BlockStmt();
                                                                                 block->stmts.emplace_back((yyvsp[0].stmt));
-                                                                                (yyval.stmt) = block;
+                                                                                (yyval.block) = block;
                                                                             }
-#line 1601 "parser.tab.cpp"
+#line 1605 "parser.tab.cpp"
     break;
 
-  case 10: /* command: identifier ASSIGN expression SEM  */
-#line 126 "parser.ypp"
+  case 10: /* for_dir: TO  */
+#line 134 "parser.ypp"
+             { (yyval.num) = 0; }
+#line 1611 "parser.tab.cpp"
+    break;
+
+  case 11: /* for_dir: DOWNTO  */
+#line 135 "parser.ypp"
+             { (yyval.num) = 1; }
+#line 1617 "parser.tab.cpp"
+    break;
+
+  case 12: /* command: identifier ASSIGN expression SEM  */
+#line 139 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
-                                                                                (yyval.stmt) = new AssignStmt((yyvsp[-3].id), std::unique_ptr<Expr>((yyvsp[-1].expr)));
+                                                                                auto v = static_cast<VarExpr*>((yyvsp[-3].expr));
+
+                                                                                if (isForIterator(v->name))
+                                                                                    yyerror("Modification of FOR iterator");
+
+                                                                                (yyval.stmt) = new AssignStmt(v, std::unique_ptr<Expr>((yyvsp[-1].expr)));
                                                                             }
-#line 1609 "parser.tab.cpp"
+#line 1630 "parser.tab.cpp"
     break;
 
-  case 11: /* command: IF condition THEN commands ELSE commands ENDIF  */
-#line 129 "parser.ypp"
+  case 13: /* command: IF condition THEN commands ELSE commands ENDIF  */
+#line 147 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command IF THEN ELSE\n";
                                                                                 (yyval.stmt) = new IfStmt(std::unique_ptr<CondExpr>((yyvsp[-5].cond)),
-                                                                                                std::unique_ptr<Stmt>((yyvsp[-3].stmt)),
-                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].stmt)));
+                                                                                                std::unique_ptr<Stmt>((yyvsp[-3].block)),
+                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].block)));
                                                                             }
-#line 1619 "parser.tab.cpp"
+#line 1640 "parser.tab.cpp"
     break;
 
-  case 12: /* command: IF condition THEN commands ENDIF  */
-#line 134 "parser.ypp"
+  case 14: /* command: IF condition THEN commands ENDIF  */
+#line 152 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command IF THEN\n";
                                                                                 (yyval.stmt) = new IfStmt(std::unique_ptr<CondExpr>((yyvsp[-3].cond)),
-                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].stmt)));
+                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].block)));
                                                                             }
-#line 1628 "parser.tab.cpp"
+#line 1649 "parser.tab.cpp"
     break;
 
-  case 13: /* command: WHILE condition DO commands ENDWHILE  */
-#line 138 "parser.ypp"
+  case 15: /* command: WHILE condition DO commands ENDWHILE  */
+#line 156 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command WHILE DO\n";
                                                                                 (yyval.stmt) = new WhileStmt(std::unique_ptr<CondExpr>((yyvsp[-3].cond)),
-                                                                                                    std::unique_ptr<Stmt>((yyvsp[-1].stmt)));
-                                                                            }
-#line 1637 "parser.tab.cpp"
-    break;
-
-  case 14: /* command: REPEAT commands UNTIL condition SEM  */
-#line 142 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";
-                                                                                (yyval.stmt) = new RepeatStmt(std::unique_ptr<Stmt>((yyvsp[-3].stmt)),
-                                                                                                    std::unique_ptr<CondExpr>((yyvsp[-1].cond)));
-                                                                            }
-#line 1646 "parser.tab.cpp"
-    break;
-
-  case 15: /* command: FOR PIDENTIFIER FROM value TO value DO commands ENDFOR  */
-#line 146 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM TO DO\n";
-                                                                                (yyval.stmt) = new ForStmt((yyvsp[-7].id),
-                                                                                                std::unique_ptr<Expr>((yyvsp[-5].expr)),
-                                                                                                std::unique_ptr<Expr>((yyvsp[-3].expr)),
-                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].stmt)),
-                                                                                                false);
+                                                                                                    std::unique_ptr<Stmt>((yyvsp[-1].block)));
                                                                             }
 #line 1658 "parser.tab.cpp"
     break;
 
-  case 16: /* command: FOR PIDENTIFIER FROM value DOWNTO value DO commands ENDFOR  */
-#line 153 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] command FOR FROM DOWNTO DO\n";
-                                                                                (yyval.stmt) = new ForStmt((yyvsp[-7].id),
-                                                                                                std::unique_ptr<Expr>((yyvsp[-5].expr)),
-                                                                                                std::unique_ptr<Expr>((yyvsp[-3].expr)),
-                                                                                                std::unique_ptr<Stmt>((yyvsp[-1].stmt)),
-                                                                                                true);
+  case 16: /* command: REPEAT commands UNTIL condition SEM  */
+#line 160 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] command REPEAT UNTIL\n";
+                                                                                (yyval.stmt) = new RepeatStmt(std::unique_ptr<Stmt>((yyvsp[-3].block)),
+                                                                                                    std::unique_ptr<CondExpr>((yyvsp[-1].cond)));
                                                                             }
-#line 1670 "parser.tab.cpp"
+#line 1667 "parser.tab.cpp"
     break;
 
-  case 17: /* command: proc_call SEM  */
-#line 160 "parser.ypp"
+  case 17: /* $@1: %empty  */
+#line 165 "parser.ypp"
+    {
+        symtab.enterScope();
+        symtab.declareVariable((yyvsp[0].id));
+        forIterStack.push_back((yyvsp[0].id));
+    }
+#line 1677 "parser.tab.cpp"
+    break;
+
+  case 18: /* command: FOR PIDENTIFIER $@1 FROM value for_dir value DO commands ENDFOR  */
+#line 171 "parser.ypp"
+    {
+        const Symbol* itSym = symtab.lookup((yyvsp[-8].id));
+if (!itSym) yyerror("INTERNAL: missing FOR iterator");
+
+(yyval.stmt) = new ForStmt(itSym->uid,
+                std::unique_ptr<Expr>((yyvsp[-5].expr)),
+                std::unique_ptr<Expr>((yyvsp[-3].expr)),
+                std::unique_ptr<Stmt>((yyvsp[-1].block)),
+                (yyvsp[-4].num) == 1);
+
+    }
+#line 1693 "parser.tab.cpp"
+    break;
+
+  case 19: /* command: proc_call SEM  */
+#line 182 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command proc_call\n";
                                                                                 (yyval.stmt) = (yyvsp[-1].stmt);
                                                                             }
-#line 1678 "parser.tab.cpp"
+#line 1701 "parser.tab.cpp"
     break;
 
-  case 18: /* command: READ identifier SEM  */
-#line 163 "parser.ypp"
+  case 20: /* command: READ identifier SEM  */
+#line 185 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command READ\n";
-                                                                                (yyval.stmt) = new ReadStmt((yyvsp[-1].id));
+                                                                                (yyval.stmt) = new ReadStmt(static_cast<VarExpr*>((yyvsp[-1].expr)));
                                                                             }
-#line 1686 "parser.tab.cpp"
+#line 1709 "parser.tab.cpp"
     break;
 
-  case 19: /* command: WRITE value SEM  */
-#line 166 "parser.ypp"
+  case 21: /* command: WRITE value SEM  */
+#line 188 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] command WRITE\n";
                                                                                 (yyval.stmt) = new WriteStmt(std::unique_ptr<Expr>((yyvsp[-1].expr)));
                                                                             }
-#line 1694 "parser.tab.cpp"
+#line 1717 "parser.tab.cpp"
     break;
 
-  case 20: /* $@1: %empty  */
-#line 172 "parser.ypp"
+  case 22: /* $@2: %empty  */
+#line 194 "parser.ypp"
                                                                             {
                                                                                 symtab.enterScope();
                                                                                 currentParams.clear();
                                                                             }
-#line 1703 "parser.tab.cpp"
+#line 1726 "parser.tab.cpp"
     break;
 
-  case 21: /* proc_head: PIDENTIFIER $@1 LBR args_decl RBR  */
-#line 176 "parser.ypp"
+  case 23: /* proc_head: PIDENTIFIER $@2 LBR args_decl RBR  */
+#line 198 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
                                                                                 if (!proctab.declareProcedure((yyvsp[-4].id), currentParams)) {
                                                                                     yyerror("Procedure redeclared");
                                                                                 }
                                                                                 (yyval.id) = (yyvsp[-4].id);
                                                                             }
-#line 1714 "parser.tab.cpp"
+#line 1737 "parser.tab.cpp"
     break;
 
-  case 22: /* proc_call: PIDENTIFIER LBR args RBR  */
-#line 185 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] proc_call PIDENTIFIER(args)\n";
-                                                                                const auto* proc = proctab.lookup((yyvsp[-3].id));
-                                                                                if (!proc) yyerror("Call to undeclared procedure");
-                                                                                if (proc->params.size() != (yyvsp[-1].idlist)->size())
-                                                                                    yyerror("Wrong number of procedure arguments");
+  case 24: /* proc_call: PIDENTIFIER LBR args RBR  */
+#line 207 "parser.ypp"
+                                                                            {
+          const auto* proc = proctab.lookup((yyvsp[-3].id));
+          if (!proc) yyerror("Call to undeclared procedure");
+          if (proc->params.size() != (yyvsp[-1].idlist)->size())
+              yyerror("Wrong number of procedure arguments");
 
-                                                                                std::vector<std::string> callArgs;
-                                                                                callArgs.reserve((yyvsp[-1].idlist)->size());
-                                                                                for (char* s : *(yyvsp[-1].idlist)) callArgs.emplace_back(s);
+          std::vector<std::string> callArgs;
+          callArgs.reserve((yyvsp[-1].idlist)->size());
+          for (char* s : *(yyvsp[-1].idlist)) callArgs.emplace_back(s);
 
-                                                                                (yyval.stmt) = new CallStmt((yyvsp[-3].id), std::move(callArgs));
+          (yyval.stmt) = new CallStmt(std::string((yyvsp[-3].id)), std::move(callArgs));
 
-                                                                                delete (yyvsp[-1].idlist);
-                                                                            }
-#line 1733 "parser.tab.cpp"
+          delete (yyvsp[-1].idlist);
+      }
+#line 1756 "parser.tab.cpp"
     break;
 
-  case 23: /* declarations: declarations COM PIDENTIFIER  */
-#line 202 "parser.ypp"
+  case 25: /* declarations: declarations COM PIDENTIFIER  */
+#line 224 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with more PID\n";
                                                                                 if (!symtab.declareVariable((yyvsp[0].id))) {
                                                                                     yyerror("Variable redeclared");
                                                                                 }
                                                                             }
-#line 1743 "parser.tab.cpp"
+#line 1766 "parser.tab.cpp"
     break;
 
-  case 24: /* declarations: declarations COM PIDENTIFIER LSB NUM COL NUM RSB  */
-#line 207 "parser.ypp"
+  case 26: /* declarations: declarations COM PIDENTIFIER LSB NUM COL NUM RSB  */
+#line 229 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with more PID[]\n";
                                                                                 if (!symtab.declareArray((yyvsp[-5].id), (yyvsp[-3].num), (yyvsp[-1].num))) {
                                                                                     yyerror("Array redeclared or invalid range");
                                                                                 }
                                                                             }
-#line 1753 "parser.tab.cpp"
+#line 1776 "parser.tab.cpp"
     break;
 
-  case 25: /* declarations: PIDENTIFIER  */
-#line 212 "parser.ypp"
+  case 27: /* declarations: PIDENTIFIER  */
+#line 234 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with last PID\n";
                                                                                 if (!symtab.declareVariable((yyvsp[0].id))) {
                                                                                     yyerror("Variable redeclared");
                                                                                 }
                                                                             }
-#line 1763 "parser.tab.cpp"
+#line 1786 "parser.tab.cpp"
     break;
 
-  case 26: /* declarations: PIDENTIFIER LSB NUM COL NUM RSB  */
-#line 217 "parser.ypp"
+  case 28: /* declarations: PIDENTIFIER LSB NUM COL NUM RSB  */
+#line 239 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] declarations with last PID[]\n";
                                                                                 if (!symtab.declareArray((yyvsp[-5].id), (yyvsp[-3].num), (yyvsp[-1].num))) {
                                                                                     yyerror("Array redeclared or invalid range");
                                                                                 }
                                                                             }
-#line 1773 "parser.tab.cpp"
+#line 1796 "parser.tab.cpp"
     break;
 
-  case 27: /* args_decl: args_decl COM type PIDENTIFIER  */
-#line 225 "parser.ypp"
+  case 29: /* args_decl: args_decl COM type PIDENTIFIER  */
+#line 247 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";
-                                                                                currentParams.push_back({currentParamMode, (yyvsp[0].id)});
-                                                                                symtab.declareVariable((yyvsp[0].id)); // parametr = zmienna w scope procedury
-                                                                            }
-#line 1782 "parser.tab.cpp"
-    break;
-
-  case 28: /* args_decl: type PIDENTIFIER  */
-#line 229 "parser.ypp"
-                                                                            {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
-                                                                                currentParams.push_back({currentParamMode, (yyvsp[0].id)});
                                                                                 symtab.declareVariable((yyvsp[0].id));
+                                                                                const Symbol* s = symtab.lookup((yyvsp[0].id));
+                                                                                currentParams.push_back({currentParamMode, (yyvsp[0].id), s->uid});
                                                                             }
-#line 1791 "parser.tab.cpp"
+#line 1806 "parser.tab.cpp"
     break;
 
-  case 29: /* type: %empty  */
-#line 236 "parser.ypp"
+  case 30: /* args_decl: type PIDENTIFIER  */
+#line 252 "parser.ypp"
+                                                                            {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
+                                                                                symtab.declareVariable((yyvsp[0].id));
+                                                                                const Symbol* s = symtab.lookup((yyvsp[0].id));
+                                                                                currentParams.push_back({currentParamMode, (yyvsp[0].id), s->uid});
+                                                                            }
+#line 1816 "parser.tab.cpp"
+    break;
+
+  case 31: /* type: %empty  */
+#line 260 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] type empty\n";}
-#line 1797 "parser.tab.cpp"
+#line 1822 "parser.tab.cpp"
     break;
 
-  case 30: /* type: T  */
-#line 237 "parser.ypp"
+  case 32: /* type: T  */
+#line 261 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] type T\n"; currentParamMode = 'T';}
-#line 1803 "parser.tab.cpp"
+#line 1828 "parser.tab.cpp"
     break;
 
-  case 31: /* type: I  */
-#line 238 "parser.ypp"
+  case 33: /* type: I  */
+#line 262 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] type I\n"; currentParamMode = 'I';}
-#line 1809 "parser.tab.cpp"
+#line 1834 "parser.tab.cpp"
     break;
 
-  case 32: /* type: O  */
-#line 239 "parser.ypp"
+  case 34: /* type: O  */
+#line 263 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] type O\n"; currentParamMode = 'O';}
-#line 1815 "parser.tab.cpp"
+#line 1840 "parser.tab.cpp"
     break;
 
-  case 33: /* args: args COM PIDENTIFIER  */
-#line 243 "parser.ypp"
+  case 35: /* args: args COM PIDENTIFIER  */
+#line 267 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args with more PID\n";
+                                                                                if (symtab.lookup((yyvsp[0].id))->kind == SymbolKind::ARRAY)
+                                                                                yyerror("Array passed as procedure argument");
                                                                                 (yyvsp[-2].idlist)->push_back((yyvsp[0].id));
                                                                                 (yyval.idlist) = (yyvsp[-2].idlist);
                                                                             }
-#line 1824 "parser.tab.cpp"
+#line 1851 "parser.tab.cpp"
     break;
 
-  case 34: /* args: PIDENTIFIER  */
-#line 247 "parser.ypp"
+  case 36: /* args: PIDENTIFIER  */
+#line 273 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] args with last PID\n";
+                                                                                if (symtab.lookup((yyvsp[0].id))->kind == SymbolKind::ARRAY)
+                                                                                yyerror("Array passed as procedure argument");
                                                                                 (yyval.idlist) = new std::vector<char*>();
                                                                                 (yyval.idlist)->push_back((yyvsp[0].id));
                                                                             }
-#line 1833 "parser.tab.cpp"
+#line 1862 "parser.tab.cpp"
     break;
 
-  case 35: /* expression: value  */
-#line 254 "parser.ypp"
+  case 37: /* expression: value  */
+#line 282 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression value\n";
                                                                                 (yyval.expr) = (yyvsp[0].expr);
                                                                             }
-#line 1841 "parser.tab.cpp"
+#line 1870 "parser.tab.cpp"
     break;
 
-  case 36: /* expression: value PLUS value  */
-#line 257 "parser.ypp"
+  case 38: /* expression: value PLUS value  */
+#line 285 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression PLUS\n";
                                                                                 (yyval.expr) = new BinExpr(BinOp::ADD,
                                                                                                     std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                     std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1851 "parser.tab.cpp"
+#line 1880 "parser.tab.cpp"
     break;
 
-  case 37: /* expression: value MINUS value  */
-#line 262 "parser.ypp"
+  case 39: /* expression: value MINUS value  */
+#line 290 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MINUS\n";
                                                                                 (yyval.expr) = new BinExpr(BinOp::SUB,
                                                                                                     std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                     std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1861 "parser.tab.cpp"
+#line 1890 "parser.tab.cpp"
     break;
 
-  case 38: /* expression: value MUL value  */
-#line 267 "parser.ypp"
+  case 40: /* expression: value MUL value  */
+#line 295 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MUL\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::MUL,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1871 "parser.tab.cpp"
+#line 1900 "parser.tab.cpp"
     break;
 
-  case 39: /* expression: value DIV value  */
-#line 272 "parser.ypp"
+  case 41: /* expression: value DIV value  */
+#line 300 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expressiion DIV\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::DIV,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1881 "parser.tab.cpp"
+#line 1910 "parser.tab.cpp"
     break;
 
-  case 40: /* expression: value MOD value  */
-#line 277 "parser.ypp"
+  case 42: /* expression: value MOD value  */
+#line 305 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] expression MOD\n";
                                                                             (yyval.expr) = new BinExpr(BinOp::MOD,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1891 "parser.tab.cpp"
+#line 1920 "parser.tab.cpp"
     break;
 
-  case 41: /* condition: value EQ value  */
-#line 285 "parser.ypp"
+  case 43: /* condition: value EQ value  */
+#line 313 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condition EQ\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::EQ,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1901 "parser.tab.cpp"
+#line 1930 "parser.tab.cpp"
     break;
 
-  case 42: /* condition: value NEQ value  */
-#line 290 "parser.ypp"
+  case 44: /* condition: value NEQ value  */
+#line 318 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condiition NEQ\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::NEQ,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1911 "parser.tab.cpp"
+#line 1940 "parser.tab.cpp"
     break;
 
-  case 43: /* condition: value GT value  */
-#line 295 "parser.ypp"
+  case 45: /* condition: value GT value  */
+#line 323 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condition GT\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::GT,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1921 "parser.tab.cpp"
+#line 1950 "parser.tab.cpp"
     break;
 
-  case 44: /* condition: value LT value  */
-#line 300 "parser.ypp"
+  case 46: /* condition: value LT value  */
+#line 328 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condiition LT\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::LT,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1931 "parser.tab.cpp"
+#line 1960 "parser.tab.cpp"
     break;
 
-  case 45: /* condition: value GEQ value  */
-#line 305 "parser.ypp"
+  case 47: /* condition: value GEQ value  */
+#line 333 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condiition GEQ\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::GEQ,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1941 "parser.tab.cpp"
+#line 1970 "parser.tab.cpp"
     break;
 
-  case 46: /* condition: value LEQ value  */
-#line 310 "parser.ypp"
+  case 48: /* condition: value LEQ value  */
+#line 338 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] condition LEQ\n";
                                                                                 (yyval.cond) = new CondExpr(CondOp::LEQ,
                                                                                                 std::unique_ptr<Expr>((yyvsp[-2].expr)),
                                                                                                 std::unique_ptr<Expr>((yyvsp[0].expr)));
                                                                             }
-#line 1951 "parser.tab.cpp"
+#line 1980 "parser.tab.cpp"
     break;
 
-  case 47: /* value: NUM  */
-#line 318 "parser.ypp"
+  case 49: /* value: NUM  */
+#line 346 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] value NUM\n";
                                                                                 (yyval.expr) = new ConstExpr((yyvsp[0].num));
                                                                             }
-#line 1959 "parser.tab.cpp"
+#line 1988 "parser.tab.cpp"
     break;
 
-  case 48: /* value: identifier  */
-#line 321 "parser.ypp"
+  case 50: /* value: identifier  */
+#line 349 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] value identifier\n";
-                                                                                (yyval.expr) = new VarExpr((yyvsp[0].id));
+                                                                                (yyval.expr) = (yyvsp[0].expr);
                                                                             }
-#line 1967 "parser.tab.cpp"
+#line 1996 "parser.tab.cpp"
     break;
 
-  case 49: /* identifier: PIDENTIFIER  */
-#line 327 "parser.ypp"
+  case 51: /* identifier: PIDENTIFIER  */
+#line 355 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier PID\n";
-                                                                                (yyval.id) = (yyvsp[0].id);
-                                                                                if (!symtab.lookup((yyvsp[0].id))) {
-                                                                                    yyerror("Use of undeclared variable");
-                                                                                }
+                                                                                const Symbol* sym = symtab.lookup((yyvsp[0].id));
+                                                                                if (!sym) yyerror("Use of undeclared variable");
+                                                                                (yyval.expr) = new VarExpr((yyvsp[0].id), sym->uid);
                                                                             }
-#line 1978 "parser.tab.cpp"
+#line 2006 "parser.tab.cpp"
     break;
 
-  case 50: /* identifier: PIDENTIFIER LSB PIDENTIFIER RSB  */
-#line 333 "parser.ypp"
+  case 52: /* identifier: PIDENTIFIER LSB PIDENTIFIER RSB  */
+#line 360 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier [PID]\n";
-                                                                                (yyval.id) = (yyvsp[-3].id);
-                                                                                auto sym = symtab.lookup((yyvsp[-3].id));
-                                                                                if (!sym) yyerror("Use of undeclared array");
-                                                                                if (sym->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+                                                                                const Symbol* symArr = symtab.lookup((yyvsp[-3].id));
+                                                                                const Symbol* symIdx = symtab.lookup((yyvsp[-1].id));
+                                                                                if (!symArr) yyerror("Use of undeclared array");
+                                                                                if (symArr->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+                                                                                if (!symIdx) yyerror("Use of undeclared variable");
 
-                                                                                // indeks jest zmienną → NIE sprawdzamy zakresu
-                                                                                if (!symtab.lookup((yyvsp[-1].id))) {
-                                                                                    yyerror("Use of undeclared variable as array index");
-                                                                                }
+                                                                                auto idx = std::make_unique<VarExpr>((yyvsp[-1].id), symIdx->uid);
+                                                                                auto* v  = new VarExpr((yyvsp[-3].id), symArr->uid, std::move(idx));
+                                                                                v->arrStart = symArr->start;
+                                                                                v->arrEnd   = symArr->end;
+
+                                                                                (yyval.expr) = v;
                                                                             }
-#line 1994 "parser.tab.cpp"
+#line 2025 "parser.tab.cpp"
     break;
 
-  case 51: /* identifier: PIDENTIFIER LSB NUM RSB  */
-#line 344 "parser.ypp"
+  case 53: /* identifier: PIDENTIFIER LSB NUM RSB  */
+#line 374 "parser.ypp"
                                                                             {if (verbose) std::cout << "[PARSE] identifier [NUM]\n";
-                                                                                (yyval.id) = (yyvsp[-3].id);
-                                                                                auto sym = symtab.lookup((yyvsp[-3].id));
-                                                                                if (!sym) {
-                                                                                    yyerror("Use of undeclared array");
-                                                                                }
-                                                                                if (sym->kind != SymbolKind::ARRAY) {
-                                                                                    yyerror("Indexing non-array");
-                                                                                }
-                                                                                if ((yyvsp[-1].num) < sym->start || (yyvsp[-1].num) > sym->end)
-                                                                                    yyerror("Array index out of bounds");
+                                                                                const Symbol* symArr = symtab.lookup((yyvsp[-3].id));
+                                                                                if (!symArr) yyerror("Use of undeclared array");
+                                                                                if (symArr->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
+
+                                                                                auto idx = std::make_unique<ConstExpr>((yyvsp[-1].num));
+                                                                                auto* v  = new VarExpr((yyvsp[-3].id), symArr->uid, std::move(idx));
+                                                                                v->arrStart = symArr->start;
+                                                                                v->arrEnd   = symArr->end;
+                                                                                (yyval.expr) = v;
                                                                             }
-#line 2011 "parser.tab.cpp"
+#line 2041 "parser.tab.cpp"
     break;
 
 
-#line 2015 "parser.tab.cpp"
+#line 2045 "parser.tab.cpp"
 
       default: break;
     }
@@ -2235,7 +2265,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 358 "parser.ypp"
+#line 387 "parser.ypp"
 
 
 void yyerror(const char *s) {

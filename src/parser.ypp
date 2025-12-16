@@ -27,7 +27,8 @@ static bool isForIterator(const std::string& name) {
 }
 Stmt* programAST = nullptr;
 bool verbose = false;
-char currentParamMode = 'T';
+char currentParamMode = ' ';
+static std::string currentProcName;
 %}
 
 %define parse.error verbose
@@ -83,6 +84,7 @@ program_all
                                                                                 if (verbose) symtab.dump();
 
                                                                                 if (verbose) std::cout << "\n=== AST (last statement) ===\n";
+                                                                                gen.allocateAllSymbols();
                                                                                 gen.genStmt(programAST);
                                                                                 gen.finish();
                                                                                 gen.flush();
@@ -91,20 +93,22 @@ program_all
     ;
 
 procedures
-    : procedures PROCEDURE proc_head IS declarations IN commands END        {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS decl IN\n";
-                                                                                auto* body = $7;
-                                                                                proctab.defineBody($3, body);
-                                                                                
-                                                                                symtab.leaveScope();
-                                                                                currentParams.clear();
-                                                                            }
-    | procedures PROCEDURE proc_head IS IN commands END                     {if (verbose) std::cout << "[PARSE] procedures PROCEDURE IS IN\n";
-                                                                                auto* body = $6;
-                                                                                proctab.defineBody($3, body);
-                                                                                
-                                                                                symtab.leaveScope();
-                                                                                currentParams.clear();
-                                                                            }
+    : procedures PROCEDURE proc_head IS declarations IN commands END {
+            auto* body = $7;
+            proctab.defineBody($3, body);
+
+            symtab.leaveScope();     // <<< zamyka scope procedury
+            currentParams.clear();
+            currentProcName.clear();
+        }
+    | procedures PROCEDURE proc_head IS IN commands END {
+            auto* body = $6;
+            proctab.defineBody($3, body);
+
+            symtab.leaveScope();     // <<< zamyka scope procedury
+            currentParams.clear();
+            currentProcName.clear();
+        }
     | /* empty */                                                           {if (verbose) std::cout << "[PARSE] procedures empty\n";}
     ;
 
@@ -139,8 +143,19 @@ command
     : identifier ASSIGN expression SEM                                      {if (verbose) std::cout << "[PARSE] command ASSIGN\n";
                                                                                 auto v = static_cast<VarExpr*>($1);
 
+                                                                                // nie wolno modyfikować parametrów I
+                                                                                const Symbol* base = symtab.lookup(v->name);
+                                                                                if (base && base->mode == 'I')
+                                                                                    yyerror("Modification of I parameter");
+
                                                                                 if (isForIterator(v->name))
                                                                                     yyerror("Modification of FOR iterator");
+
+                                                                                // podstawienie inicjalizuje parametr O
+                                                                                if (base && base->mode == 'O') {
+                                                                                    Symbol* mut = symtab.lookupMutable(v->name);
+                                                                                    if (mut) mut->initialized = true;
+                                                                                }
 
                                                                                 $$ = new AssignStmt(v, std::unique_ptr<Expr>($3));
                                                                             }
@@ -164,26 +179,40 @@ command
     | FOR PIDENTIFIER
     {
         symtab.enterScope();
-        symtab.declareVariable($2);
+        symtab.declareVariable($2, ' ', false);
         forIterStack.push_back($2);
     }
     FROM value for_dir value DO commands ENDFOR
     {
         const Symbol* itSym = symtab.lookup($2);
-if (!itSym) yyerror("INTERNAL: missing FOR iterator");
+        if (!itSym) yyerror("INTERNAL: missing FOR iterator");
 
-$$ = new ForStmt(itSym->uid,
-                std::unique_ptr<Expr>($5),
-                std::unique_ptr<Expr>($7),
-                std::unique_ptr<Stmt>($9),
-                $6 == 1);
+        $$ = new ForStmt(
+            $2,                 // nazwa iteratora
+            itSym->uid,         // UID iteratora
+            std::unique_ptr<Expr>($5),
+            std::unique_ptr<Expr>($7),
+            std::unique_ptr<Stmt>($9),
+            $6 == 1
+        );
+
+        // iterator FOR jest lokalny
+        forIterStack.pop_back();
+        symtab.leaveScope();
 
     }
     | proc_call SEM                                                         {if (verbose) std::cout << "[PARSE] command proc_call\n";
                                                                                 $$ = $1;
                                                                             }
     | READ identifier SEM                                                   {if (verbose) std::cout << "[PARSE] command READ\n";
-                                                                                $$ = new ReadStmt(static_cast<VarExpr*>($2));
+                                                                                auto v = static_cast<VarExpr*>($2);
+                                                                                const Symbol* base = symtab.lookup(v->name);
+                                                                                if (base && base->mode == 'I') yyerror("READ into I parameter");
+                                                                                if (base && base->mode == 'O') {
+                                                                                    Symbol* mut = symtab.lookupMutable(v->name);
+                                                                                    if (mut) mut->initialized = true;
+                                                                                }
+                                                                                $$ = new ReadStmt(v);
                                                                             }
     | WRITE value SEM                                                       {if (verbose) std::cout << "[PARSE] command WRITE\n";
                                                                                 $$ = new WriteStmt(std::unique_ptr<Expr>($2));
@@ -192,8 +221,10 @@ $$ = new ForStmt(itSym->uid,
 
 proc_head
     : PIDENTIFIER                                                           {
-                                                                                symtab.enterScope();
+                                                                                symtab.enterScope(); 
                                                                                 currentParams.clear();
+                                                                                currentParamMode = ' ';
+                                                                                currentProcName = $1;
                                                                             } 
       LBR args_decl RBR                                                     {if (verbose) std::cout << "[PARSE] proc_head PIDENTIFIER(args_decl)\n";
                                                                                 if (!proctab.declareProcedure($1, currentParams)) {
@@ -210,13 +241,57 @@ proc_call
           if (proc->params.size() != $3->size())
               yyerror("Wrong number of procedure arguments");
 
-          std::vector<std::string> callArgs;
-          callArgs.reserve($3->size());
-          for (char* s : *$3) callArgs.emplace_back(s);
+          // Zakaz bezpośredniej rekurencji
+          if (!currentProcName.empty() && currentProcName == std::string($1))
+              yyerror("Recursive procedure call");
 
-          $$ = new CallStmt(std::string($1), std::move(callArgs));
+          // Sprawdzenie zgodności argumentów z parametrami (T vs scalar, I/O)
+          for (size_t i = 0; i < proc->params.size(); ++i) {
+              const ProcParam& fp = proc->params[i];
+              const char* aname = (*$3)[i];
+              const Symbol* as = symtab.lookup(aname);
+              if (!as) yyerror("Use of undeclared variable");
 
-          delete $3;
+              // T -> musi być tablica
+              if (fp.mode == 'T') {
+                  if (as->kind != SymbolKind::ARRAY) yyerror("Expected array argument");
+              } else {
+                  if (as->kind != SymbolKind::VARIABLE) yyerror("Expected scalar argument");
+              }
+
+              // I-argumenty w procedurze wywołującej można przekazywać tylko do I
+              if (as->mode == 'I' && fp.mode != 'I')
+                  yyerror("I parameter can be passed only to I formal parameter");
+
+              // O nie można podać w miejsce I
+              if (as->mode == 'O' && fp.mode == 'I')
+                  yyerror("O parameter cannot be passed to I formal parameter");
+
+              // Po wywołaniu parametr OUT (O) staje się zainicjalizowany w kontekście wywołującego
+              if (fp.mode == 'O') {
+                  Symbol* mut = symtab.lookupMutable(aname);
+                  if (mut) mut->initialized = true;
+              }
+          }
+
+          std::vector<CallArg> callArgs;
+            callArgs.reserve($3->size());
+
+            for (char* anameC : *$3) {
+                std::string aname(anameC);
+                const Symbol* as = symtab.lookup(aname);
+                if (!as) yyerror("Use of undeclared variable");
+
+                CallArg ca;
+                ca.uid = as->uid;
+                ca.isArray = (as->kind == SymbolKind::ARRAY);
+                ca.start = as->start;
+                ca.end   = as->end;
+                callArgs.push_back(ca);
+            }
+
+            $$ = new CallStmt(std::string($1), std::move(callArgs));
+            delete $3;
       }
     ;
 
@@ -245,19 +320,30 @@ declarations
 
 args_decl
     : args_decl COM type PIDENTIFIER                                        {if (verbose) std::cout << "[PARSE] args_decl with more PID\n";
-                                                                                symtab.declareVariable($4);
+                                                                                if (currentParamMode == 'T') {
+                                                                                    symtab.declareArray($4, 0, 0, 'T');
+                                                                                } else {
+                                                                                    bool init = (currentParamMode != 'O');
+                                                                                    if (!symtab.declareVariable($4, currentParamMode, init))
+                                                                                        yyerror("Parameter redeclared");
+                                                                                }
                                                                                 const Symbol* s = symtab.lookup($4);
                                                                                 currentParams.push_back({currentParamMode, $4, s->uid});
                                                                             }
     | type PIDENTIFIER                                                      {if (verbose) std::cout << "[PARSE] args_decl with last PID\n";
-                                                                                symtab.declareVariable($2);
+                                                                                if (currentParamMode == 'T') {
+                                                                                    symtab.declareArray($2, 0, 0, 'T');
+                                                                                } else {
+                                                                                    bool init = (currentParamMode != 'O');
+                                                                                    symtab.declareVariable($2, currentParamMode, init);
+                                                                                }
                                                                                 const Symbol* s = symtab.lookup($2);
                                                                                 currentParams.push_back({currentParamMode, $2, s->uid});
                                                                             }
     ;
 
 type
-    : /* empty */                                                           {if (verbose) std::cout << "[PARSE] type empty\n";}
+    : /* empty */                                                           {if (verbose) std::cout << "[PARSE] type empty\n"; currentParamMode = ' ';}
     | T                                                                     {if (verbose) std::cout << "[PARSE] type T\n"; currentParamMode = 'T';}
     | I                                                                     {if (verbose) std::cout << "[PARSE] type I\n"; currentParamMode = 'I';}
     | O                                                                     {if (verbose) std::cout << "[PARSE] type O\n"; currentParamMode = 'O';}
@@ -265,14 +351,12 @@ type
 
 args
     : args COM PIDENTIFIER                                                  {if (verbose) std::cout << "[PARSE] args with more PID\n";
-                                                                                if (symtab.lookup($3)->kind == SymbolKind::ARRAY)
-                                                                                yyerror("Array passed as procedure argument");
+                                                                                if (!symtab.lookup($3)) yyerror("Use of undeclared variable");
                                                                                 $1->push_back($3);
                                                                                 $$ = $1;
                                                                             }
     | PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] args with last PID\n";
-                                                                                if (symtab.lookup($1)->kind == SymbolKind::ARRAY)
-                                                                                yyerror("Array passed as procedure argument");
+                                                                                if (!symtab.lookup($1)) yyerror("Use of undeclared variable");
                                                                                 $$ = new std::vector<char*>();
                                                                                 $$->push_back($1);
                                                                             }
@@ -347,6 +431,12 @@ value
                                                                                 $$ = new ConstExpr($1);
                                                                             }
     | identifier                                                            {if (verbose) std::cout << "[PARSE] value identifier\n";
+                                                                                // nie wolno czytać parametru O przed inicjalizacją
+                                                                                if (auto v = dynamic_cast<VarExpr*>($1)) {
+                                                                                    const Symbol* s = symtab.lookup(v->name);
+                                                                                    if (s && s->mode == 'O' && !s->initialized)
+                                                                                        yyerror("Read of O parameter before initialization");
+                                                                                }
                                                                                 $$ = $1;
                                                                             }
     ;
@@ -354,15 +444,25 @@ value
 identifier
     : PIDENTIFIER                                                           {if (verbose) std::cout << "[PARSE] identifier PID\n";
                                                                                 const Symbol* sym = symtab.lookup($1);
-                                                                                if (!sym) yyerror("Use of undeclared variable");
-                                                                                $$ = new VarExpr($1, sym->uid);
+        if (!sym) yyerror("Use of undeclared variable");
+
+        // >>> DODAJ TO
+        if (isForIterator($1)) {
+            // iterator FOR MUSI brać UID z bieżącego scope
+            // lookup już to zrobił, ale to wymusza poprawną semantykę
+        }
+        // <<<
+
+        $$ = new VarExpr($1, sym->uid);
                                                                             }
     | PIDENTIFIER LSB PIDENTIFIER RSB                                       {if (verbose) std::cout << "[PARSE] identifier [PID]\n";
                                                                                 const Symbol* symArr = symtab.lookup($1);
                                                                                 const Symbol* symIdx = symtab.lookup($3);
                                                                                 if (!symArr) yyerror("Use of undeclared array");
                                                                                 if (symArr->kind != SymbolKind::ARRAY) yyerror("Indexing non-array");
-                                                                                if (!symIdx) yyerror("Use of undeclared variable");
+																if (!symIdx) yyerror("Use of undeclared variable");
+																if (symIdx->mode == 'O' && !symIdx->initialized)
+																	yyerror("Read of O parameter before initialization");
 
                                                                                 auto idx = std::make_unique<VarExpr>($3, symIdx->uid);
                                                                                 auto* v  = new VarExpr($1, symArr->uid, std::move(idx));

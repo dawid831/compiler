@@ -9,24 +9,46 @@ void SymbolTable::leaveScope() {
         scopes.pop_back();
 }
 
-bool SymbolTable::declareVariable(const std::string& name) {
-    auto& current = scopes.back();
-    if (current.count(name)) return false;
+bool SymbolTable::declareVariable(const std::string& name, char mode, bool initialized) {
+    auto& scope = scopes.back();
+    if (scope.count(name)) return false;
 
-    current[name] = { SymbolKind::VARIABLE, 0, 0, nextUid++ };  // <-- uid
+    Symbol s;
+    s.addr = nextAddr++;
+    s.kind = SymbolKind::VARIABLE;
+    s.uid = nextUid++;
+    s.mode = mode;
+    s.initialized = initialized;
+
+    scope[name] = s;
+    uidMap[s.uid] = &scope[name];   // <<< KLUCZOWE
+
     return true;
 }
 
-bool SymbolTable::declareArray(const std::string& name, long long start, long long end) {
-    auto& current = scopes.back();
-    if (current.count(name)) return false;
-    if (start > end) {
-        std::cerr << "ERROR: invalid array range\n";
-        return false;
-    }
+bool SymbolTable::declareArray(const std::string& name, long long start, long long end, char mode) {
+    auto& scope = scopes.back();
+    if (scope.count(name)) return false;
 
-    current[name] = { SymbolKind::ARRAY, start, end, nextUid++ }; // <-- uid
+    Symbol s;
+    s.addr = nextAddr;
+    nextAddr += (end - start + 1);
+    s.kind = SymbolKind::ARRAY;
+    s.start = start;
+    s.end = end;
+    s.uid = nextUid++;
+    s.mode = mode;
+
+    scope[name] = s;
+    uidMap[s.uid] = &scope[name];   // <<< KLUCZOWE
+
     return true;
+}
+
+const Symbol* SymbolTable::lookupByUid(int uid) const {
+    auto it = uidMap.find(uid);
+    if (it == uidMap.end()) return nullptr;
+    return it->second;
 }
 
 const Symbol* SymbolTable::lookup(const std::string& name) const {
@@ -37,6 +59,37 @@ const Symbol* SymbolTable::lookup(const std::string& name) const {
         }
     }
     return nullptr;
+}
+
+Symbol* SymbolTable::lookupMutable(const std::string& name) {
+    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+        auto found = it->find(name);
+        if (found != it->end()) return &found->second;
+    }
+    return nullptr;
+}
+
+std::vector<Symbol>& SymbolTable::getAllSymbols() {
+    static std::vector<Symbol> allSymbols;
+    allSymbols.clear();
+    for (const auto& scope : scopes) {
+        for (const auto& [_, sym] : scope) {
+            allSymbols.push_back(sym);
+        }
+    }
+    return allSymbols;
+}
+
+const std::vector<Symbol> &SymbolTable::getAllSymbols() const
+{
+    static std::vector<Symbol> allSymbols;
+    allSymbols.clear();
+    for (const auto& scope : scopes) {
+        for (const auto& [_, sym] : scope) {
+            allSymbols.push_back(sym);
+        }
+    }
+    return allSymbols;
 }
 
 void SymbolTable::dump() const {

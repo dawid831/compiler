@@ -24,9 +24,8 @@ struct ConstExpr : Expr {
 };
 
 struct VarExpr : Expr {
-    ExprKind kind;
     std::string name;
-    int uid;                      // unikalny identyfikator symbolu
+    int uid;
     bool isArray = false;
     long long arrStart = 0;
     long long arrEnd = 0;
@@ -64,8 +63,7 @@ enum class StmtKind {
     IF,
     WHILE,
     REPEAT,
-    FOR,
-    NOP          
+    FOR        
 };
 
 struct Stmt {
@@ -106,15 +104,21 @@ struct BlockStmt : Stmt {
     }
 };
 
+struct CallArg {
+    int uid;
+    bool isArray;
+    long long start, end;   // ważne dla T (tablica)
+};
+
 struct CallStmt : Stmt {
     std::string name;
-    std::vector<std::string> args;
-
-    CallStmt(const std::string& n, std::vector<std::string> a)
+    std::vector<CallArg> args;
+    CallStmt(const std::string& n, std::vector<CallArg> a)
         : name(n), args(std::move(a)) {
         kind = StmtKind::CALL;
     }
 };
+
 
 struct CondExpr {
     CondOp op;
@@ -187,8 +191,4 @@ struct ForStmt : Stmt {
     {
         kind = StmtKind::FOR;
     }
-};
-
-struct NopStmt : Stmt {
-    NopStmt() { kind = StmtKind::NOP; }
 };

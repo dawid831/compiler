@@ -15,6 +15,10 @@ public:
     void genConst(long long value);
     void emitCondJump(const CondExpr* cond, int labelTrue, int labelFalse);
 
+    void allocateAllSymbols();
+
+    void allocateGlobals();
+
     void flush();
     void finish() {
         emit("HALT");

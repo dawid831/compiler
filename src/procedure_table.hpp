@@ -6,8 +6,8 @@
 
 struct ProcParam {
     char mode;              // 'T','I','O'
-    std::string name;       // nazwa parametru (opcjonalnie do debug)
-    int uid;                // <-- DODAJ
+    std::string name;       // nazwa parametru (do debug)
+    int uid;                // unikalny identyfikator parametru formalnego
 };
 
 

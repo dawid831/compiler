@@ -48,15 +48,13 @@ void SymbolTable::dumpNamesUidsAddrs() const {
 
     std::unordered_set<int> seenUid;
 
-    // idziemy od zewnętrznego do wewnętrznego albo odwrotnie – tu od wewnętrznego,
-    // żeby było widać shadowing; a seenUid nie dubluje uidów.
     for (auto sit = scopes.rbegin(); sit != scopes.rend(); ++sit) {
         for (const auto& [name, symInScope] : *sit) {
             int uid = symInScope.uid;
             if (seenUid.count(uid)) continue;
             seenUid.insert(uid);
 
-            const Symbol* real = lookupByUid(uid); // addr z uidMap
+            const Symbol* real = lookupByUid(uid);
             int addr = real ? real->addr : -999;
 
             std::cout << name

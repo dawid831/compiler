@@ -107,7 +107,7 @@ struct BlockStmt : Stmt {
 struct CallArg {
     int uid;
     bool isArray;
-    long long start, end;   // ważne dla T (tablica)
+    long long start, end;   // dla tablic
 };
 
 struct CallStmt : Stmt {
@@ -170,14 +170,14 @@ struct RepeatStmt : Stmt {
 
 struct ForStmt : Stmt {
     std::string iterator;
-    int iteratorUid;                 // <-- DODAJ
+    int iteratorUid;
     std::unique_ptr<Expr> from;
     std::unique_ptr<Expr> to;
     std::unique_ptr<Stmt> body;
     bool downto;
 
     ForStmt(const std::string& it,
-            int itUid,               // <-- DODAJ
+            int itUid,
             std::unique_ptr<Expr> f,
             std::unique_ptr<Expr> t,
             std::unique_ptr<Stmt> b,

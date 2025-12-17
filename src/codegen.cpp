@@ -11,7 +11,7 @@ struct ParamBinding {
     //  - dla tablic: adres bazowy tablicy (pierwszego elementu)
 
     bool isArray = false;
-    // czy parametr formalny jest tablicą (mode == 'T')
+    // czy parametr formalny jest tablicą
 
     long long arrStart = 0;
     long long arrEnd = 0;
@@ -30,9 +30,9 @@ std::vector<std::unordered_map<int, ParamBinding>> paramEnv;
 int nextAddr = 0;
 
 void CodeGen::allocateAllSymbols() {
-    // Przechodzimy po WSZYSTKICH symbolach (ze wszystkich scope'ów)
-    // UID → Symbol
-    // Alokacja jest globalna i JEDNORAZOWA
+    // Przechodzimy po wszystkich symbolach ze wszystkich scope'ów
+    // UID -> Symbol
+    // Alokacja jest globalna i jednorazowa (statyczna analiza)
 
     for (auto& [uid, s] : symtab.getUidMap()) {
         if (s.addr != -1) continue;
@@ -50,8 +50,8 @@ void CodeGen::allocateAllSymbols() {
 }
 
 int getTmpAddr(const std::string&) {
-    // Każde wywołanie daje NOWY adres
-    // Nigdy nie jest zwalniany (ale to OK – program jest krótki)
+    // Każde wywołanie daje nowy adres
+    // Nigdy nie jest zwalniany (na potrzeby tymczasów wystarczy prosta alokacja)
     return nextAddr++;
 }
 
@@ -71,7 +71,7 @@ int resolveAddr(const VarExpr* v) {
     return s->addr;
 }
 
-// Funkcja flush() wykonuje FINALIZACJĘ kodu maszynowego.
+// Funkcja flush() wykonuje finalizację kodu maszynowego.
 //
 // W trakcie generowania kodu skoki (JUMP, JZERO, JPOS)
 // nie znają jeszcze docelowych adresów instrukcji.
@@ -243,7 +243,7 @@ void CodeGen::emitCondJump(const CondExpr* cond,
         break;
 
     case CondOp::LEQ:
-        // left <= right  <=>  !(left > right) === !(left - right > 0)
+        // left <= right  ===  !(left > right) === !(left - right > 0)
         // sprawdzamy (left - right) > 0 => FAŁSZ, wpp. PRAWDA
         genExpr(cond->right.get());
         emit("SWP b");
@@ -254,7 +254,7 @@ void CodeGen::emitCondJump(const CondExpr* cond,
         break;
 
     case CondOp::GEQ:
-        // left >= right  <=>  !(left < right)  <=>  !(right - left > 0)
+        // left >= right  ===  !(left < right)  ===  !(right - left > 0)
         genExpr(cond->left.get());
         emit("SWP b");
         genExpr(cond->right.get());
@@ -402,7 +402,7 @@ void CodeGen::genStmt(const Stmt* s) {
                 int callerAddr;
             };
 
-            std::vector<OutCopy> outCopies;   // ← LOKALNE, tylko dla tego CALL
+            std::vector<OutCopy> outCopies;   // lokalne, tylko dla tego CALL
 
             std::unordered_map<int, ParamBinding> frame;
             frame.reserve(proc->params.size());
@@ -414,7 +414,7 @@ void CodeGen::genStmt(const Stmt* s) {
                     exit(1);
                 }
                 int actualUid = actualName.uid;
-                // kluczowe: adres argumentu wyliczamy przez resolveAddr, żeby działało także gdy argument jest parametrem innej procedury
+                // adres argumentu wyliczamy przez resolveAddr, żeby działało także gdy argument jest parametrem innej procedury
                 VarExpr actualDummy("__arg", actualUid);
                 int actualAddr = resolveAddr(&actualDummy);
 
@@ -427,12 +427,12 @@ void CodeGen::genStmt(const Stmt* s) {
                     bind.arrEnd   = actualName.end;
                     frame[param.uid] = bind;
                 } else if (param.mode == ' ') {
-                    // domyślny parametr → IN-OUT (przez referencję)
+                    // domyślny parametr IN-OUT (przez referencję)
                     bind.addr = actualAddr;
                     frame[param.uid] = bind;
 
                 } else if (param.mode == 'I') {
-                    // IN → przez wartość
+                    // IN przez wartość
                     int local = getTmpAddr("__in_" + std::to_string(param.uid) + "_" + std::to_string(newLabel()));
                     emit("LOAD " + std::to_string(actualAddr));
                     emit("STORE " + std::to_string(local));
@@ -492,12 +492,12 @@ void CodeGen::genStmt(const Stmt* s) {
 
             markLabel(startLabel);
 
-            // jeśli warunek FAŁSZ → end
+            // jeśli warunek FAŁSZ -> end
             emitCondJump(w->cond.get(),
                         /*true*/  newLabel(),  // tymczasowy
                         /*false*/ endLabel);
 
-            int bodyLabel = labelCounter - 1; // to jest label true
+            int bodyLabel = labelCounter - 1; // label true
 
             markLabel(bodyLabel);
             genStmt(w->body.get());
@@ -525,7 +525,6 @@ void CodeGen::genStmt(const Stmt* s) {
             VarExpr iterExpr(f->iterator, f->iteratorUid);
 
             int itAddr = resolveAddr(&iterExpr);
-            static int tmpCounter = 0;
 
             int fromAddr = getTmpAddr("__from");
             int toAddr   = getTmpAddr("__to");
@@ -553,7 +552,7 @@ void CodeGen::genStmt(const Stmt* s) {
 
             /* --- wyliczamy cnt (liczbę iteracji) --- */
             if (!f->downto) {
-                // TO: pusta gdy from > to  ⇔  (from - to) > 0
+                // TO: pusta gdy from > to  ===  (from - to) > 0
 
                 emit("LOAD " + std::to_string(toAddr));
                 emit("SWP b");                            // b = to
@@ -569,7 +568,7 @@ void CodeGen::genStmt(const Stmt* s) {
                 emit("INC a");
                 emit("STORE " + std::to_string(cntAddr));
             } else {
-                // DOWNTO: pusta gdy from < to ⇔ (to - from) > 0
+                // DOWNTO: pusta gdy from < to === (to - from) > 0
 
                 emit("LOAD " + std::to_string(fromAddr));
                 emit("SWP b");                            // b = from
@@ -587,7 +586,7 @@ void CodeGen::genStmt(const Stmt* s) {
             }
             markLabel(L_start);
 
-            // jeśli cnt == 0 → koniec
+            // jeśli cnt == 0 -> koniec
             emit("LOAD " + std::to_string(cntAddr));
             emit("JZERO @L" + std::to_string(L_end));
 
@@ -737,7 +736,7 @@ void CodeGen::genExpr(const Expr* e) {
                     int Lend  = newLabel();
                     int Ldiv0 = newLabel();
 
-                    // UWAGA: adresy tempów wyliczamy RAZ
+                    // adresy tempów wyliczamy RAZ
                     int addrA = getTmpAddr("__div_a_" + std::to_string(L1)); // dividend
                     int addrB = getTmpAddr("__div_b_" + std::to_string(L1)); // divisor
                     int addrQ = getTmpAddr("__div_q_" + std::to_string(L1)); // quotient
@@ -753,7 +752,7 @@ void CodeGen::genExpr(const Expr* e) {
                     // A = dividend (left)  [jest w b]
                     emit("SWP b");                      // a = left, b = right
                     emit("STORE " + std::to_string(addrA));
-                    emit("SWP b");                      // przywróć: a = right, b = left (opcjonalne, ale bezpieczne)
+                    emit("SWP b");                      // a = right, b = left
 
                     // if B == 0 -> 0
                     emit("LOAD " + std::to_string(addrB));
@@ -836,6 +835,7 @@ void CodeGen::genExpr(const Expr* e) {
                     else       emit("LOAD " + std::to_string(addrQ));
                     break;
                 }
+                // fallback
                 default:
                     std::cerr << "BINOP not implemented yet\n";
                     exit(1);

@@ -20,10 +20,15 @@ struct Symbol {
 
 class SymbolTable {
     std::vector<std::unordered_map<std::string, Symbol>> scopes;
-    std::unordered_map<int, Symbol*> uidMap;   // <<< DODAJ
+    std::unordered_map<int, Symbol> uidMap;
     int nextUid = 1;
-    int nextAddr = 0;
 public:
+    std::unordered_map<int, Symbol>& getUidMap() { return uidMap; }
+    const std::unordered_map<int, Symbol>& getUidMap() const { return uidMap; }
+
+    void dumpWithAddrs() const;
+    void dumpNamesUidsAddrs() const;
+
     SymbolTable() { enterScope(); }
 
     void enterScope();
@@ -38,7 +43,7 @@ public:
     std::vector<Symbol>& getAllSymbols();
     const std::vector<Symbol>& getAllSymbols() const;
 
-    const Symbol* lookupByUid(int uid) const;   // <<< DODAJ
+    const Symbol* lookupByUid(int uid) const;
 
     void dump() const;
 };

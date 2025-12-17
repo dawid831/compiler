@@ -17,8 +17,6 @@ public:
 
     void allocateAllSymbols();
 
-    void allocateGlobals();
-
     void flush();
     void finish() {
         emit("HALT");

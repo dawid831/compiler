@@ -1,44 +1,68 @@
 #include "codegen.hpp"
 #include "symbol_table.hpp"
 
+// Globalna tabela symboli (zmienne globalne, lokalne, parametry procedur)
 extern SymbolTable symtab;
 
 struct ParamBinding {
-    int addr = -1;          // adres bazowy (dla tablic) albo adres zmiennej
+    int addr = -1;
+    // addr:
+    //  - dla skalarów: bezpośredni adres komórki pamięci
+    //  - dla tablic: adres bazowy tablicy (pierwszego elementu)
+
     bool isArray = false;
+    // czy parametr formalny jest tablicą (mode == 'T')
+
     long long arrStart = 0;
     long long arrEnd = 0;
+    // faktyczny zakres tablicy przekazanej w wywołaniu
 };
 
+// paramEnv działa jak STACK wywołań procedur:
+//
+// paramEnv.back()   -> aktualnie wykonywana procedura
+// paramEnv.front()  -> pierwsza (najbardziej zewnętrzna)
+//
+// Klucz: uid parametru formalnego
+// Wartość: ParamBinding (adres, czy tablica, zakres)
 std::vector<std::unordered_map<int, ParamBinding>> paramEnv;
 
 int nextAddr = 0;
 
 void CodeGen::allocateAllSymbols() {
-    for (Symbol& s : symtab.getAllSymbols()) {
+    // Przechodzimy po WSZYSTKICH symbolach (ze wszystkich scope'ów)
+    // UID → Symbol
+    // Alokacja jest globalna i JEDNORAZOWA
+
+    for (auto& [uid, s] : symtab.getUidMap()) {
         if (s.addr != -1) continue;
 
         s.addr = nextAddr;
 
         if (s.kind == SymbolKind::ARRAY) {
+            // tablica zajmuje (end-start+1) komórek
             nextAddr += (s.end - s.start + 1);
         } else {
+            // skalar zajmuje 1 komórkę
             nextAddr += 1;
         }
     }
 }
 
 int getTmpAddr(const std::string&) {
+    // Każde wywołanie daje NOWY adres
+    // Nigdy nie jest zwalniany (ale to OK – program jest krótki)
     return nextAddr++;
 }
 
 int resolveAddr(const VarExpr* v) {
-    // 1. parametry / iteratory FOR
+    // 1. Najpierw sprawdzamy, czy to parametr procedury (albo iterator FOR)
+    //    – wtedy jego adres pochodzi z paramEnv
     for (auto it = paramEnv.rbegin(); it != paramEnv.rend(); ++it)
         if (it->count(v->uid))
             return (*it)[v->uid].addr;
 
-    // 2. zwykła zmienna
+    // 2. W przeciwnym razie – zwykła zmienna globalna/lokalna
     const Symbol* s = symtab.lookupByUid(v->uid);
     if (!s || s->addr < 0) {
         std::cerr << "INTERNAL ERROR: unresolved variable addr\n";
@@ -47,41 +71,87 @@ int resolveAddr(const VarExpr* v) {
     return s->addr;
 }
 
+// Funkcja flush() wykonuje FINALIZACJĘ kodu maszynowego.
+//
+// W trakcie generowania kodu skoki (JUMP, JZERO, JPOS)
+// nie znają jeszcze docelowych adresów instrukcji.
+// Zamiast tego używane są symboliczne etykiety postaci @L<number>.
+//
+// flush():
+//  1) przechodzi po wszystkich wygenerowanych liniach kodu,
+//  2) wyszukuje symboliczne etykiety @Lx,
+//  3) zastępuje je rzeczywistymi numerami instrukcji,
+//     zapisanymi wcześniej w mapie labelPos,
+//  4) wypisuje finalny kod maszynowy na stdout.
+//
+// Jeśli jakaś etykieta nie została zdefiniowana (brak w labelPos),
+// kompilator kończy się błędem wewnętrznym.
 void CodeGen::flush() {
+
+    // Przechodzimy po wszystkich wygenerowanych liniach kodu maszynowego.
+    // Każda linia to jedna instrukcja lub dyrektywa (string).
     for (auto& line : lines) {
+
+        // p = aktualna pozycja wyszukiwania w danej linii
         size_t p = 0;
+
+        // Szukamy wszystkich wystąpień "@L" w linii,
+        // ponieważ w jednej instrukcji może wystąpić więcej niż jedna etykieta
+        // (teoretycznie, choć w praktyce raczej jedna).
         while ((p = line.find("@L", p)) != std::string::npos) {
+
+            // numStart – początek numeru etykiety (zaraz po "@L")
             size_t numStart = p + 2;
             size_t numEnd = numStart;
 
-            while (numEnd < line.size() && isdigit((unsigned char)line[numEnd])) {
+            // Przesuwamy numEnd tak długo, jak długo są to cyfry,
+            // aby wyciągnąć pełny numer etykiety (np. @L123)
+            while (numEnd < line.size() &&
+                   isdigit((unsigned char)line[numEnd])) {
                 numEnd++;
             }
 
+            // Jeśli po "@L" nie było żadnej cyfry,
+            // mamy błędnie wygenerowaną etykietę (np. "@L ")
             if (numEnd == numStart) {
-                std::cerr << "INTERNAL ERROR: malformed label in: " << line << "\n";
+                std::cerr << "INTERNAL ERROR: malformed label in: "
+                          << line << "\n";
                 exit(1);
             }
 
+            // Parsujemy numer etykiety, np. z "@L42" → 42
             int lab = std::stoi(line.substr(numStart, numEnd - numStart));
+
+            // Szukamy rzeczywistej pozycji tej etykiety w kodzie
+            // labelPos mapuje: label → numer instrukcji
             auto it = labelPos.find(lab);
             if (it == labelPos.end()) {
-                std::cerr << "INTERNAL ERROR: unresolved label " << lab << "\n";
+                // Jeśli etykieta nie została nigdy oznaczona przez markLabel(),
+                // to znaczy, że kod generatora jest logicznie błędny
+                std::cerr << "INTERNAL ERROR: unresolved label "
+                          << lab << "\n";
                 exit(1);
             }
 
+            // Zamieniamy "@L<nr>" na konkretny numer instrukcji
+            // np. "JUMP @L5" → "JUMP 37"
             line.replace(p, numEnd - p, std::to_string(it->second));
+
+            // Przesuwamy p za wstawiony numer,
+            // aby uniknąć zapętlenia wyszukiwania
             p += std::to_string(it->second).size();
         }
     }
 
+    // Po podmienieniu wszystkich etykiet
+    // wypisujemy gotowy kod maszynowy na stdout
     for (auto& line : lines) {
         std::cout << line << "\n";
     }
 }
 
 
-
+// Generowanie kodu dla stałej wartosci liczbowej
 void CodeGen::genConst(long long value)
 {
     emit("RST a");
@@ -102,6 +172,8 @@ void CodeGen::genConst(long long value)
     }
 }
 
+// Generowanie kodu dla wyrażenia warunkowego
+// SPRAWDZONE, NIE ZMIENIAC BEZ POWODU
 void CodeGen::emitCondJump(const CondExpr* cond,
                            int labelTrue,
                            int labelFalse)
@@ -109,61 +181,86 @@ void CodeGen::emitCondJump(const CondExpr* cond,
     switch (cond->op) {
 
     case CondOp::EQ:
+        // left - right == 0 and right - left == 0
+        // a = left
         genExpr(cond->left.get());
-        emit("SWP b");
-        genExpr(cond->right.get());
-        emit("SWP b");
-        emit("SUB b");               // left - right
-        emit("JZERO @L" + std::to_string(labelTrue));
-        emit("JUMP  @L" + std::to_string(labelFalse));
-        break;
+        emit("SWP b");              // b = left
 
-    case CondOp::NEQ:
-        genExpr(cond->left.get());
-        emit("SWP b");
+        // a = right
         genExpr(cond->right.get());
-        emit("SWP b");
-        emit("SUB b");
-        emit("JZERO @L" + std::to_string(labelFalse));
-        emit("JUMP  @L" + std::to_string(labelTrue));
-        break;
+        emit("SUB b");              // a = max(right - left, 0)
+        emit("JPOS @L" + std::to_string(labelFalse)); // jeśli >0 -> nie równe
 
-    case CondOp::LT:
-        // left < right  ⇔  right - left > 0
+        // teraz sprawdzamy drugą stronę
         genExpr(cond->right.get());
-        emit("SWP b");
+        emit("SWP b");              // b = right
         genExpr(cond->left.get());
-        emit("SUB b");               // right - left
-        emit("JZERO @L" + std::to_string(labelFalse));
-        emit("JUMP  @L" + std::to_string(labelTrue));
-        break;
+        emit("SUB b");              // a = max(left - right, 0)
+        emit("JPOS @L" + std::to_string(labelFalse)); // jeśli >0 -> nie równe
 
-    case CondOp::LEQ:
-        // left <= right ⇔ right - left >= 0 (zawsze prawda poza przepełnieniem)
-        genExpr(cond->right.get());
-        emit("SWP b");
-        genExpr(cond->left.get());
-        emit("SUB b");
+        // jeśli oba = 0 → równe
         emit("JUMP @L" + std::to_string(labelTrue));
         break;
 
-    case CondOp::GT:
-        // left > right ⇔ left - right > 0
+    case CondOp::NEQ:
+        // left - right > 0 lub  right - left > 0
+        // right - left
         genExpr(cond->left.get());
         emit("SWP b");
         genExpr(cond->right.get());
         emit("SUB b");
-        emit("JZERO @L" + std::to_string(labelFalse));
+        emit("JPOS @L" + std::to_string(labelTrue));
+
+        // left - right
+        genExpr(cond->right.get());
+        emit("SWP b");
+        genExpr(cond->left.get());
+        emit("SUB b");
+        emit("JPOS @L" + std::to_string(labelTrue));
+
+        // inaczej równe
+        emit("JUMP @L" + std::to_string(labelFalse));
+        break;
+
+    case CondOp::LT:
+        // left < right  ===  (right - left) > 0
+        genExpr(cond->left.get());
+        emit("SWP b");
+        genExpr(cond->right.get());
+        emit("SUB b");                         // a = right - left 
+        emit("JPOS  @L" + std::to_string(labelTrue));
+        emit("JUMP  @L" + std::to_string(labelFalse));
+    break;
+
+    case CondOp::GT:
+        // left > right === (left - right) > 0
+        genExpr(cond->right.get());
+        emit("SWP b");
+        genExpr(cond->left.get());
+        emit("SUB b");                         // a = left - right 
+        emit("JPOS  @L" + std::to_string(labelTrue));
+        emit("JUMP  @L" + std::to_string(labelFalse));
+        break;
+
+    case CondOp::LEQ:
+        // left <= right  <=>  !(left > right) === !(left - right > 0)
+        // sprawdzamy (left - right) > 0 => FAŁSZ, wpp. PRAWDA
+        genExpr(cond->right.get());
+        emit("SWP b");
+        genExpr(cond->left.get());
+        emit("SUB b");               // left - right
+        emit("JPOS  @L" + std::to_string(labelFalse));
         emit("JUMP  @L" + std::to_string(labelTrue));
         break;
 
     case CondOp::GEQ:
-        // left >= right ⇔ left - right >= 0 (zawsze prawda poza 0)
+        // left >= right  <=>  !(left < right)  <=>  !(right - left > 0)
         genExpr(cond->left.get());
         emit("SWP b");
         genExpr(cond->right.get());
-        emit("SUB b");
-        emit("JUMP @L" + std::to_string(labelTrue));
+        emit("SUB b");               // right - left
+        emit("JPOS  @L" + std::to_string(labelFalse));
+        emit("JUMP  @L" + std::to_string(labelTrue));
         break;
     }
 }
@@ -175,32 +272,45 @@ int getForCounterAddr() {
 }
 
 void CodeGen::emitArrayAddrToC(const VarExpr* arr) {
-    // arr->index MUST exist
-    genExpr(arr->index.get());       // a = index
+    // tmp na offset
+    int tmpOffset = getTmpAddr("__idx_" + std::to_string(newLabel()));
 
-    // Jeżeli to parametr tablicowy (T), to w czasie generowania (inline'owanie)
-    // znamy faktyczny zakres tablicy przekazanej w wywołaniu.
+    // 1) offset = index
+    genExpr(arr->index.get());     // a = index
+
+    // ustal start i bazę
     long long start = arr->arrStart;
+    int baseAddr = resolveAddr(arr);
+
     for (size_t i = paramEnv.size(); i-- > 0; ) {
         auto it = paramEnv[i].find(arr->uid);
         if (it != paramEnv[i].end() && it->second.isArray) {
-            start = it->second.arrStart;
+            start    = it->second.arrStart;
+            baseAddr = it->second.addr;
             break;
         }
     }
 
-    // a = index - start
-    emit("SWP b");                   // b = index
-    genConst(start);                 // a = start
-    emit("SWP b");                   // b = start, a = index
-    emit("SUB b");                   // a = index - start
+    // 2) offset -= start
+    if (start != 0) {
+        genConst(start);        // a = start
+        emit("SWP c");          // c = start
+        genExpr(arr->index.get()); // a = index
+        emit("SUB c");          // a = index - start
+    }
 
-    // a = base + (index-start)
-    emit("SWP b");                   // b = offset
-    genConst(resolveAddr(arr));      // a = base (z mapowania parametrów albo z pamięci globalnej)
-    emit("ADD b");                   // a = base + offset
+    emit("STORE " + std::to_string(tmpOffset)); // zapisz offset
 
-    emit("SWP c");                   // rc = address
+    // 3) a = base
+    genConst(baseAddr);
+
+    // 4) a = base + offset (przez b, ale z backupem)
+    emit("SWP c");                              // c = base
+    emit("LOAD " + std::to_string(tmpOffset)); // a = offset
+    emit("ADD c");                              // a = base + offset
+
+    // 5) c = adres
+    emit("SWP c");
 }
 
 void CodeGen::genStmt(const Stmt* s) {
@@ -220,12 +330,25 @@ void CodeGen::genStmt(const Stmt* s) {
             if (!a->lhs->index) {
                 emit("STORE " + std::to_string(resolveAddr(a->lhs.get())));
             } else {
-                int tmp = getTmpAddr("__assign_rhs_" + std::to_string(newLabel()));
-                emit("STORE " + std::to_string(tmp));
+                // lhs jest tablicą: A[idx] := rhs
 
-                emitArrayAddrToC(a->lhs.get());
+                int lhsAddrTmp = getTmpAddr("__lhs_addr_" + std::to_string(newLabel()));
+                int rhsTmp     = getTmpAddr("__rhs_"     + std::to_string(newLabel()));
 
-                emit("LOAD " + std::to_string(tmp));
+                // 1) policz adres elementu i zapisz go
+                emitArrayAddrToC(a->lhs.get());   // c = addr(A[idx])
+                emit("RST a");
+                emit("ADD c");                    // a = c
+                emit("STORE " + std::to_string(lhsAddrTmp));
+
+                // 2) policz RHS i zapisz go
+                genExpr(a->rhs.get());            // a = rhs
+                emit("STORE " + std::to_string(rhsTmp));
+
+                // 3) odtwórz adres i wykonaj zapis
+                emit("LOAD " + std::to_string(lhsAddrTmp));
+                emit("SWP c");                    // c = addr(A[idx])
+                emit("LOAD " + std::to_string(rhsTmp));
                 emit("RSTORE c");
             }
             break;
@@ -236,12 +359,20 @@ void CodeGen::genStmt(const Stmt* s) {
             if (!r->target->index) {
                 emit("STORE " + std::to_string(resolveAddr(r->target.get())));
             } else {
-                int tmp = getTmpAddr("__read_tmp_" + std::to_string(newLabel()));
-                emit("STORE " + std::to_string(tmp));
+                int lhsAddrTmp = getTmpAddr("__read_lhs_" + std::to_string(newLabel()));
+                int valTmp     = getTmpAddr("__read_val_" + std::to_string(newLabel()));
 
-                emitArrayAddrToC(r->target.get());
+                emit("READ");
+                emit("STORE " + std::to_string(valTmp));
 
-                emit("LOAD " + std::to_string(tmp));
+                emitArrayAddrToC(r->target.get());   // c = addr(A[idx])
+                emit("RST a");
+                emit("ADD c");
+                emit("STORE " + std::to_string(lhsAddrTmp));
+
+                emit("LOAD " + std::to_string(lhsAddrTmp));
+                emit("SWP c");
+                emit("LOAD " + std::to_string(valTmp));
                 emit("RSTORE c");
             }
             break;
@@ -283,7 +414,9 @@ void CodeGen::genStmt(const Stmt* s) {
                     exit(1);
                 }
                 int actualUid = actualName.uid;
-                int actualAddr = symtab.lookupByUid(actualUid)->addr;
+                // kluczowe: adres argumentu wyliczamy przez resolveAddr, żeby działało także gdy argument jest parametrem innej procedury
+                VarExpr actualDummy("__arg", actualUid);
+                int actualAddr = resolveAddr(&actualDummy);
 
                 ParamBinding bind;
                 bind.addr = actualAddr;
@@ -355,16 +488,21 @@ void CodeGen::genStmt(const Stmt* s) {
             auto w = static_cast<const WhileStmt*>(s);
 
             int startLabel = newLabel();
-            int bodyLabel  = newLabel();
             int endLabel   = newLabel();
 
             markLabel(startLabel);
-            emitCondJump(w->cond.get(), bodyLabel, endLabel);
+
+            // jeśli warunek FAŁSZ → end
+            emitCondJump(w->cond.get(),
+                        /*true*/  newLabel(),  // tymczasowy
+                        /*false*/ endLabel);
+
+            int bodyLabel = labelCounter - 1; // to jest label true
 
             markLabel(bodyLabel);
             genStmt(w->body.get());
-            emit("JUMP @L" + std::to_string(startLabel));
 
+            emit("JUMP @L" + std::to_string(startLabel));
             markLabel(endLabel);
             break;
         }
@@ -382,67 +520,100 @@ void CodeGen::genStmt(const Stmt* s) {
             break;
         }
         case StmtKind::FOR: {
-    auto f = static_cast<const ForStmt*>(s);
+            auto *f = static_cast<const ForStmt*>(s);
 
-    int itAddr = symtab.lookupByUid(f->iteratorUid)->addr;
+            VarExpr iterExpr(f->iterator, f->iteratorUid);
 
-    // iterator widoczny w ciele pętli
-    std::unordered_map<int, ParamBinding> itFrame;
-    itFrame[f->iteratorUid] = ParamBinding{ itAddr, false };
-    paramEnv.push_back(std::move(itFrame));
+            int itAddr = resolveAddr(&iterExpr);
+            static int tmpCounter = 0;
 
-    // Zamrażamy granicę "to" (żeby nie przeliczać i nie zależeć od iteratora)
-    int limitAddr = getTmpAddr("__for_limit_" + std::to_string(newLabel()));
-    genExpr(f->to.get());
-    emit("STORE " + std::to_string(limitAddr));
+            int fromAddr = getTmpAddr("__from");
+            int toAddr   = getTmpAddr("__to");
+            int cntAddr  = getTmpAddr("__cnt");
 
-    // i := from
-    genExpr(f->from.get());
-    emit("STORE " + std::to_string(itAddr));
+            int L_start   = newLabel();
+            int L_body    = newLabel();
+            int L_end     = newLabel();
+            int L_noIters = newLabel();
 
-    int loopLabel = newLabel();
-    int bodyLabel = newLabel();
-    int endLabel  = newLabel();
+            /* --- zamrażamy FROM i TO --- */
 
-    markLabel(loopLabel);
+            genExpr(f->from.get());
+            emit("STORE " + std::to_string(fromAddr));
 
-    // Oblicz diff = i - limit
-    emit("LOAD " + std::to_string(itAddr));      // a = i
-    emit("SWP b");                               // b = i
-    emit("LOAD " + std::to_string(limitAddr));   // a = limit
-    emit("SWP b");                               // b = limit, a = i
-    emit("SUB b");                               // a = i - limit
+            genExpr(f->to.get());
+            emit("STORE " + std::to_string(toAddr));
 
-    if (!f->downto) {
-        // TO: kontynuuj gdy i <= limit  <=> (i - limit) <= 0
-        // wyjście gdy i > limit <=> (i - limit) > 0
-        emit("JPOS @L" + std::to_string(endLabel));
-        emit("JUMP @L" + std::to_string(bodyLabel));
-    } else {
-        // DOWNTO: kontynuuj gdy i >= limit <=> (i - limit) >= 0
-        // wyjście gdy i < limit  <=> (i - limit) < 0
-        // brak JNEG -> jeśli nie JPOS i nie JZERO, to musi być <0
-        emit("JPOS @L" + std::to_string(bodyLabel));
-        emit("JZERO @L" + std::to_string(bodyLabel));
-        emit("JUMP @L" + std::to_string(endLabel));
-    }
+            /* --- iterator := from --- */
 
-    markLabel(bodyLabel);
-    genStmt(f->body.get());
+            emit("LOAD " + std::to_string(fromAddr));
+            emit("STORE " + std::to_string(itAddr));
 
-    // i++ / i--
-    emit("LOAD " + std::to_string(itAddr));
-    if (f->downto) emit("DEC a");
-    else          emit("INC a");
-    emit("STORE " + std::to_string(itAddr));
+            /* --- wyliczamy cnt (liczbę iteracji) --- */
 
-    emit("JUMP @L" + std::to_string(loopLabel));
-    markLabel(endLabel);
+            /* --- wyliczamy cnt (liczbę iteracji) --- */
+            if (!f->downto) {
+                // TO: pusta gdy from > to  ⇔  (from - to) > 0
 
-    paramEnv.pop_back();
-    break;
-}
+                emit("LOAD " + std::to_string(toAddr));
+                emit("SWP b");                            // b = to
+                emit("LOAD " + std::to_string(fromAddr)); // a = from
+                emit("SUB b");                            // a = from - to
+                emit("JPOS @L" + std::to_string(L_noIters));
 
+                // cnt = (to - from) + 1
+                emit("LOAD " + std::to_string(fromAddr));
+                emit("SWP b");                            // b = from
+                emit("LOAD " + std::to_string(toAddr));   // a = to
+                emit("SUB b");                            // a = to - from
+                emit("INC a");
+                emit("STORE " + std::to_string(cntAddr));
+            } else {
+                // DOWNTO: pusta gdy from < to ⇔ (to - from) > 0
+
+                emit("LOAD " + std::to_string(fromAddr));
+                emit("SWP b");                            // b = from
+                emit("LOAD " + std::to_string(toAddr));   // a = to
+                emit("SUB b");                            // a = to - from
+                emit("JPOS @L" + std::to_string(L_noIters));
+
+                // cnt = (from - to) + 1
+                emit("LOAD " + std::to_string(toAddr));
+                emit("SWP b");                            // b = to
+                emit("LOAD " + std::to_string(fromAddr)); // a = from
+                emit("SUB b");                            // a = from - to
+                emit("INC a");
+                emit("STORE " + std::to_string(cntAddr));
+            }
+            markLabel(L_start);
+
+            // jeśli cnt == 0 → koniec
+            emit("LOAD " + std::to_string(cntAddr));
+            emit("JZERO @L" + std::to_string(L_end));
+
+            // cnt--
+            emit("DEC a");
+            emit("STORE " + std::to_string(cntAddr));
+
+            markLabel(L_body);
+
+            // ciało pętli
+            genStmt(f->body.get());
+
+            // iterator++ / iterator--
+            emit("LOAD " + std::to_string(itAddr));
+            if (!f->downto) emit("INC a");
+            else           emit("DEC a");
+            emit("STORE " + std::to_string(itAddr));
+
+            emit("JUMP @L" + std::to_string(L_start));
+
+            /* --- brak iteracji --- */
+
+            markLabel(L_noIters);
+            markLabel(L_end);
+            break;
+        }
     }
 }
 
@@ -469,14 +640,14 @@ void CodeGen::genExpr(const Expr* e) {
         case ExprKind::BINOP: {
             auto b = static_cast<const BinExpr*>(e);
 
-                if (b->op == BinOp::SUB) {
-                    // chcemy: left - right
-                    genExpr(b->right.get());   // a = right
-                    emit("SWP b");             // b = right
-                    genExpr(b->left.get());    // a = left
-                    emit("SUB b");             // a = left - right
-                    break;
-                }
+            if (b->op == BinOp::SUB) {
+                // chcemy: left - right
+                genExpr(b->right.get());   // a = right
+                emit("SWP b");             // b = right
+                genExpr(b->left.get());    // a = left
+                emit("SUB b");             // a = left - right
+                break;
+            }
 
             genExpr(b->left.get());
             emit("SWP b");
